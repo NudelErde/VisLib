@@ -68,7 +68,8 @@ library
                       VisLib.Buffer.VertexBuffer, 
                       VisLib.Base, 
                       VisLib.Buffer.ObjectFile, 
-                      VisLib.Buffer.Texture
+                      VisLib.Buffer.Texture,
+                      VisLib.Buffer.Image
 
     -- Modules included in this library but not exported.
     other-modules: VisLib.Shader.ShaderTypes
@@ -88,7 +89,9 @@ library
                       lens, 
                       linear, 
                       split, 
-                      transformers
+                      transformers,
+                      array,
+                      bytestring
 
     -- Directories containing source files.
     hs-source-dirs:   lib

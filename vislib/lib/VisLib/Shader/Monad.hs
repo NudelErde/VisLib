@@ -349,7 +349,7 @@ sample_ s t =
       t2 = getType t
       s' = toOp s
       t' = toOp t
-   in if isSampler t1 && isVector t2 then Func t2 "texture" [s', t'] else WrappedError $ "Cannot sample (" ++ show t1 ++ " and " ++ show t2 ++ ")"
+   in if isSampler t1 && isVector t2 then Func vec4 "texture" [s', t'] else WrappedError $ "Cannot sample (" ++ show t1 ++ " and " ++ show t2 ++ ")"
 
 infixl 8 !.
 

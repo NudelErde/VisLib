@@ -1,5 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# LANGUAGE GADTs #-}
 
 module VisLib.Base (module VisLib.Base, module VisLib.Shader.ShaderTypes) where
 
@@ -9,6 +10,9 @@ import Control.Monad.IO.Class
 import Data.IORef
 import qualified Graphics.Rendering.OpenGL.GL as GL
 import VisLib.Shader.ShaderTypes
+import Data.Array.Storable (StorableArray)
+import Foreign
+import Data.Data
 
 type ErrorType = String
 
@@ -38,6 +42,9 @@ data Buffer = GLBuffer
 $(makeLenses ''Buffer)
 
 data TextureSpecification = TextureSpecification GL.PixelInternalFormat (Int, Int) deriving (Eq)
+
+data Image where
+  Image :: (Typeable a, Storable a) => (Int, Int) -> GL.PixelFormat -> StorableArray Int a -> Image
 
 data Texture = GLTexture GL.TextureObject (IORef (Maybe TextureSpecification))
 
