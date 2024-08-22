@@ -1,4 +1,4 @@
-module VisLib.Buffer.GL (createBuffer, bindBuffer, writeVertices, writeIndices, writeData, bufferVertices, bufferIndices, bufferData, drawBuffer) where
+module VisLib.Buffer.VertexBuffer (createBuffer, bindBuffer, writeVertices, writeIndices, writeData, bufferVertices, bufferIndices, bufferData, drawBuffer) where
 
 import Control.Monad (forM_, when)
 import Control.Monad.Except

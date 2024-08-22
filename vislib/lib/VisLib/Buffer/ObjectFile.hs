@@ -39,9 +39,9 @@ parseObjectFile content = do
   vertexTextureCoords' <-
     mapM
       ( \s -> case words s of
-          "vt" : u : v : w : _ -> return (read u, read v, read w)
-          "vt" : u : v : _ -> return (read u, read v, 0)
-          "vt" : u : _ -> return (read u, 0, 0)
+          "vt" : _ : _ : _ : _ -> throwError $ "Weirdo? Who uses 3D texture coordinates? lmao (" ++ show s ++ ")"
+          "vt" : u : v : _ -> return (read u, read v)
+          "vt" : u : _ -> return (read u, 0)
           _ -> throwError $ "Invalid vertex texture coordinate (" ++ show s ++ ")"
       )
       vertexTextureCoords
@@ -55,7 +55,7 @@ parseObjectFile content = do
       faces
   buildData vertexPositions' vertexTextureCoords' vertexNormals' faces'
 
-buildData :: [(Float, Float, Float, Float)] -> [(Float, Float, Float)] -> [(Float, Float, Float)] -> [(String, String, String, Maybe String)] -> Computation (BufferDescription, [Float], [Int])
+buildData :: [(Float, Float, Float, Float)] -> [(Float, Float)] -> [(Float, Float, Float)] -> [(String, String, String, Maybe String)] -> Computation (BufferDescription, [Float], [Int])
 buildData vertexPositions [] [] faces = do
   let parseVertexIndex :: String -> Computation Int
       parseVertexIndex s = case reads s of
@@ -116,4 +116,74 @@ buildData vertexPosition [] vertexNormals faces = do
   let vertexData' = vertexData >>= \((x, y, z, w), (nx, ny, nz)) -> [x, y, z, w, nx, ny, nz]
   return (BufferDescription [BufferAttribute 4 1, BufferAttribute 3 1] ArrayOfStruct, vertexData', indexData)
 
-buildData _ _ _ _ = throwError "Not implemented"
+buildData vertexPosition vertexTextureCoords [] faces = do
+  let parseVertexIndex :: String -> Computation (Int, Int)
+      parseVertexIndex s = do
+        let [a, b] = splitOn "/" s
+        case reads a of
+          [(i, "")] -> case reads b of
+            [(j, "")] -> return (i, j)
+            _ -> throwError $ "Invalid vertex index (" ++ show s ++ ")"
+          _ -> throwError $ "Invalid vertex index (" ++ show s ++ ")"
+
+  faces' <- mapM
+      ( \case
+          (v1, v2, v3, Nothing) -> do
+            a <- parseVertexIndex v1
+            b <- parseVertexIndex v2
+            c <- parseVertexIndex v3
+            return [(a, b, c)]
+          (v1, v2, v3, Just v4) -> do
+            a <- parseVertexIndex v1
+            b <- parseVertexIndex v2
+            c <- parseVertexIndex v3
+            d <- parseVertexIndex v4
+            return [(a, b, c), (c, d, a)]
+      )
+      faces
+  let faces'' = join faces'
+  let realIndices = faces'' >>= \(x, y, z) -> [x, y, z]
+  let uniqueIndices = nub realIndices
+  let vertexData = map (bimap ((vertexPosition !!) . subtract 1) ((vertexTextureCoords !!) . subtract 1)) uniqueIndices
+  indexData <- mapM (\a -> case elemIndex a uniqueIndices of
+    Just i -> return i
+    Nothing -> throwError "Invalid index") realIndices
+  let vertexData' = vertexData >>= \((x, y, z, w), (tx, ty)) -> [x, y, z, w, tx, ty]
+  return (BufferDescription [BufferAttribute 4 1, BufferAttribute 2 1] ArrayOfStruct, vertexData', indexData)
+
+buildData vertexPosition vertexTextureCoords vertexNormals faces = do
+  let parseVertexIndex :: String -> Computation (Int, Int, Int)
+      parseVertexIndex s = do
+        let [a, b, c] = splitOn "/" s
+        case reads a of
+          [(i, "")] -> case reads b of
+            [(j, "")] -> case reads c of
+              [(k, "")] -> return (i, j, k)
+              _ -> throwError $ "Invalid vertex index (" ++ show s ++ ")"
+            _ -> throwError $ "Invalid vertex index (" ++ show s ++ ")"
+          _ -> throwError $ "Invalid vertex index (" ++ show s ++ ")"
+
+  faces' <- mapM
+      ( \case
+          (v1, v2, v3, Nothing) -> do
+            a <- parseVertexIndex v1
+            b <- parseVertexIndex v2
+            c <- parseVertexIndex v3
+            return [(a, b, c)]
+          (v1, v2, v3, Just v4) -> do
+            a <- parseVertexIndex v1
+            b <- parseVertexIndex v2
+            c <- parseVertexIndex v3
+            d <- parseVertexIndex v4
+            return [(a, b, c), (c, d, a)]
+      )
+      faces
+  let faces'' = join faces'
+  let realIndices = faces'' >>= \(x, y, z) -> [x, y, z]
+  let uniqueIndices = nub realIndices
+  let vertexData = map (\(a,b,c) -> (vertexPosition !! (a - 1), vertexTextureCoords !! (b-1), vertexNormals !! (c-1))) uniqueIndices
+  let vertexData' = vertexData >>= \((x, y, z, w), (tx, ty), (nx, ny, nz)) -> [x, y, z, w, tx, ty, nx, ny, nz]
+  indexData <- mapM (\a -> case elemIndex a uniqueIndices of
+    Just i -> return i
+    Nothing -> throwError "Invalid index") realIndices
+  return (BufferDescription [BufferAttribute 4 1, BufferAttribute 2 1, BufferAttribute 3 1] ArrayOfStruct, vertexData', indexData)

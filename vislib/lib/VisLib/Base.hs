@@ -1,7 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
-{-# HLINT ignore "Use newtype instead of data" #-}
 module VisLib.Base (module VisLib.Base, module VisLib.Shader.ShaderTypes) where
 
 import Control.Lens
@@ -37,6 +36,10 @@ data Buffer = GLBuffer
   }
 
 $(makeLenses ''Buffer)
+
+data TextureSpecification = TextureSpecification GL.PixelInternalFormat (Int, Int) deriving (Eq)
+
+data Texture = GLTexture GL.TextureObject (IORef (Maybe TextureSpecification))
 
 liftComputationIO :: Computation a -> ComputationIO a
 liftComputationIO = ExceptT . liftIO . return . runExcept

@@ -22,6 +22,9 @@ data Type
 class ShaderTypeable a where
   getType :: a -> Type
 
+sampler2D :: Type
+sampler2D = Sampler Sampler2D
+
 vector :: BaseType -> Int -> Type
 vector t 1 = Primitive t
 vector t n = Tensor t n 1

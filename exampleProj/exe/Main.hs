@@ -18,7 +18,7 @@ import Linear.V2 (V2 (..))
 import Linear.V3 (V3 (..))
 import Linear.V4 (V4 (..))
 import VisLib.Base
-import VisLib.Buffer.GL
+import VisLib.Buffer.VertexBuffer
 import VisLib.Shader.GL
 import VisLib.Shader.Monad
 import VisLib.Buffer.ObjectFile (parseObjectFile')
@@ -177,6 +177,15 @@ colorShader description = do
       0.1 0.8 0.5 32
     color <- colorFromPos pos
     outValue "color" $ intensity !* color
+
+textureShader :: BufferDescription -> ShaderProgramM ()
+textureShader description = do
+  [pos, tex] <- attributes description
+  [colorTex] <- uniforms [sampler2D]
+  shaderM VertexShader $ do
+    gl_Position <~ pos
+  shaderM FragmentShader $ do
+    outValue "color" $ sample_ colorTex tex
 
 buildShader :: BufferDescription -> ComputationIO Shader
 buildShader = compileProgram (ShaderVersion "330 core") . colorShader

@@ -343,6 +343,14 @@ abs_ v =
       v' = toOp v
    in if isPrimitive t then Func t "abs" [v'] else WrappedError $ "Cannot get abs of non-scalar (" ++ show t ++ ")"
 
+sample_ :: (ShaderTerm a, ShaderTerm b) => a -> b -> Op
+sample_ s t =
+  let t1 = getType s
+      t2 = getType t
+      s' = toOp s
+      t' = toOp t
+   in if isSampler t1 && isVector t2 then Func t2 "texture" [s', t'] else WrappedError $ "Cannot sample (" ++ show t1 ++ " and " ++ show t2 ++ ")"
+
 infixl 8 !.
 
 (!.) :: (ShaderTerm a) => a -> String -> Op

@@ -62,7 +62,13 @@ library
     import:           warnings
 
     -- Modules exported by the library.
-    exposed-modules:  VisLib.Shader.GL, VisLib.Shader.TH, VisLib.Shader.Monad, VisLib.Buffer.GL, VisLib.Base, VisLib.Buffer.ObjectFile
+    exposed-modules:  VisLib.Shader.GL, 
+                      VisLib.Shader.TH, 
+                      VisLib.Shader.Monad, 
+                      VisLib.Buffer.VertexBuffer, 
+                      VisLib.Base, 
+                      VisLib.Buffer.ObjectFile, 
+                      VisLib.Buffer.Texture
 
     -- Modules included in this library but not exported.
     other-modules: VisLib.Shader.ShaderTypes
@@ -71,7 +77,18 @@ library
     -- other-extensions:
 
     -- Other library packages from which modules are imported.
-    build-depends:    base ^>=4.19.0.0, OpenGL, StateVar, GLUT, mtl, OpenGLRaw, composition, template-haskell, mtl, lens, linear, split
+    build-depends:    base ^>=4.19.0.0, 
+                      OpenGL, 
+                      StateVar, 
+                      GLUT, 
+                      OpenGLRaw, 
+                      composition, 
+                      template-haskell, 
+                      mtl, 
+                      lens, 
+                      linear, 
+                      split, 
+                      transformers
 
     -- Directories containing source files.
     hs-source-dirs:   lib
