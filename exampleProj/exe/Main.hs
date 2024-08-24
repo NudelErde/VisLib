@@ -23,6 +23,9 @@ import VisLib.Buffer.Texture
 import VisLib.Buffer.VertexBuffer
 import VisLib.Shader.GL
 import VisLib.Shader.Monad
+import Object
+import Control.Monad
+import Linear ((!*!))
 
 instance ShaderTypeable (RGB Float) where
   getType _ = vec4
@@ -51,38 +54,28 @@ getAspectRatio = do
   (GLUT.Size w h) <- get GLUT.windowSize
   return $ fromIntegral w / fromIntegral h
 
-display :: Shader -> Buffer -> Texture -> IORef Int -> GLUT.DisplayCallback
-display prog buffer tex count = modifyError error $ do
+display :: [ObjectContainer] -> IORef Int -> GLUT.DisplayCallback
+display objects count = modifyError error $ do
   liftIO $ GLUT.clear [GLUT.ColorBuffer, GLUT.DepthBuffer]
-  -- c <- liftIO $ readIORef count
-  -- liftIO $ modifyIORef' count (+ 1)
-  -- ratio <- liftIO getAspectRatio
+  count' <- liftIO $ readIORef count
+  liftIO $ modifyIORef' count (+ 1)
+  let time = fromIntegral count' / 60
 
-  -- let m = translate4 0 (-5) (-5) !*! rotate4xz (fromIntegral c * 0.01) !*! scale4 0.1 0.1 0.1
-  -- let v = rotate4yz (pi / 4)
-  -- let p = perspective (pi / 4) ratio 0.1 100
-  -- let mvp = p !*! v !*! m
-  -- let normalMatrix = transpose $ inv33 $ m ^. _m33
+  let lightPosition = vf3 (sin time) 0 (-4.5 + cos time)
 
-  -- bindShader prog [packUniform mvp, packUniform m, packUniform normalMatrix, packUniform (vf4 2 0 (-3) 1)]
-  bindShader prog [packUniform tex]
-  drawBuffer buffer
+  let config = SceneConfiguration {
+    viewMatrix = rotate4yz (pi / 4),
+    projectionMatrix = perspective (pi / 4) 1 0.1 100,
+    lightPos = lightPosition,
+    viewPos = vf3 0 0 0,
+    ambientStrength = 0.1,
+    diffuseStrength = 0.7,
+    specularStrength = 0.2,
+    shininess = 32
+  }
+  forM_ objects $ \(ObjectContainer object) -> draw time config object
+
   liftIO GLUT.swapBuffers
-
-colorShader :: BufferDescription -> ShaderProgramM ()
-colorShader description = do
-  [mvp, m, normalMatrix, lightPos] <- uniforms [mat4x4, mat4x4, mat3x3, vec4]
-  [pos, normal] <- attributes description
-  normal' <- varying vec3
-  pos' <- varying vec4
-  shaderM VertexShader $ do
-    gl_Position <~ mvp !* pos
-    pos' <~ m !* pos
-    normal' <~ normalMatrix !* normal
-  shaderM FragmentShader $ do
-    intensity <- phong lightPos (vf4 0 0 0 1) normal' pos' 0.1 0.8 0.5 32
-    color <- colorFromPos pos
-    outValue "color" $ intensity !* color
 
 textureShader :: BufferDescription -> ShaderProgramM ()
 textureShader description = do
@@ -114,21 +107,22 @@ main :: IO ()
 main = do
   spawnWindow
 
-  buffer <- modifyError error $ readObj "plane.obj"
-  tex <- modifyError error $ readTex "neg_x.ppm"
-  prog <- modifyError error $ compileProgram (ShaderVersion "330 core") $ textureShader (buffer ^. bufferDescription)
+  objects <- modifyError error $ do
+    let defaultMaterial = LightConfiguration {
+      _ambientStrength = 0.1,
+      _diffuseStrength = 0.7,
+      _specularStrength = 0.2,
+      _shininess = 32
+    }
+    cube1 <- createVertexOnlyObject (vf3 0.8 0.6 0.6) (translate4 1 (-5) (-5)) =<< readObj "CubeVert.obj"
+    cube2 <- createPhongNormalObject (vf3 0.6 0.8 0.6) defaultMaterial (translate4 (-1) (-5) (-5)) =<< readObj "Cube.obj"
+    teapot <- createPhongNormalObject (vf3 0.6 0.6 0.8) defaultMaterial (translate4 0 (-3) (-5) !*! scale4 0.1 0.1 0.1) =<< readObj "teapot.obj"
 
-  -- prog <- modifyError error $ compileProgram (ShaderVersion "330 core") $ colorShader (buffer ^. bufferDescription)
-
-  -- case runExcept $ precompileProgram (ShaderVersion "330 core") $ textureShader (buffer ^. bufferDescription) of
-  --  Left e -> print e
-  --  Right (v, f, _) -> do
-  --    putStrLn v
-  --    putStrLn f
+    return [ObjectContainer cube1, ObjectContainer cube2, ObjectContainer teapot]
 
   frameCount <- newIORef (0 :: Int)
 
-  GLUT.displayCallback $= display prog buffer tex frameCount
+  GLUT.displayCallback $= display objects frameCount
   GLUT.debugMessageCallback $= Just print
 
   addRepeatTimer 16 $ GLUT.postRedisplay Nothing

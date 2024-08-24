@@ -2,6 +2,13 @@ module Shader where
 
 import VisLib.Shader.Monad
 
+data LightConfiguration = LightConfiguration {
+  _ambientStrength :: Float,
+  _diffuseStrength :: Float,
+  _specularStrength :: Float,
+  _shininess :: Int
+}
+
 diffuseLightByPos :: (ShaderTerm a, ShaderTerm b, ShaderTerm c) => a -> b -> c -> ShaderM Op
 diffuseLightByPos lightPos normal fragPos = do
   let lightDir = normalize_ (lightPos !- fragPos) !. "xyz"
@@ -16,8 +23,8 @@ specularLightByPos lightPos viewPos normal fragPos shininess = do
   let specular = max_ (0 :: Float) (dot_ viewDir reflectDir) `pow_` shininess
   return specular
 
-phong :: (ShaderTerm a, ShaderTerm b, ShaderTerm c, ShaderTerm d) => a -> b -> c -> d -> Float -> Float -> Float -> Int -> ShaderM Op
-phong lightPos viewPos normal fragPos ambientStrength diffuseStrength specularStrength shininess = do
+phong :: (ShaderTerm a, ShaderTerm b, ShaderTerm c, ShaderTerm d) => a -> b -> c -> d -> LightConfiguration -> ShaderM Op
+phong lightPos viewPos normal fragPos (LightConfiguration ambientStrength diffuseStrength specularStrength shininess) = do
   let normal' = normalize_ normal
   diffuse <- diffuseLightByPos lightPos normal' fragPos
   specular <- specularLightByPos lightPos viewPos normal' fragPos shininess
