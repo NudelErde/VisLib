@@ -2,7 +2,7 @@ module Shader where
 
 import VisLib.Shader.Monad
 
-data LightConfiguration = LightConfiguration {
+data Material = PhongMaterial {
   _ambientStrength :: Float,
   _diffuseStrength :: Float,
   _specularStrength :: Float,
@@ -23,8 +23,8 @@ specularLightByPos lightPos viewPos normal fragPos shininess = do
   let specular = max_ (0 :: Float) (dot_ viewDir reflectDir) `pow_` shininess
   return specular
 
-phong :: (ShaderTerm a, ShaderTerm b, ShaderTerm c, ShaderTerm d) => a -> b -> c -> d -> LightConfiguration -> ShaderM Op
-phong lightPos viewPos normal fragPos (LightConfiguration ambientStrength diffuseStrength specularStrength shininess) = do
+phong :: (ShaderTerm a, ShaderTerm b, ShaderTerm c, ShaderTerm d) => a -> b -> c -> d -> Material -> ShaderM Op
+phong lightPos viewPos normal fragPos (PhongMaterial ambientStrength diffuseStrength specularStrength shininess) = do
   let normal' = normalize_ normal
   diffuse <- diffuseLightByPos lightPos normal' fragPos
   specular <- specularLightByPos lightPos viewPos normal' fragPos shininess
@@ -32,6 +32,7 @@ phong lightPos viewPos normal fragPos (LightConfiguration ambientStrength diffus
   let diffuse' = diffuse !* diffuseStrength
   let specular' = specular !* specularStrength
   return $ ambient !+ diffuse' !+ specular'
+phong _ _ _ _ _ = error "phong: invalid arguments"
 
 colorFromPos :: (ShaderTerm a) => a -> ShaderM Op
 colorFromPos pos = do

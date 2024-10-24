@@ -1,6 +1,6 @@
 module Math where
 
-import Linear.Matrix (M22, M33, M44, identity, inv33, transpose, (!!*), (!*!), (*!!), _m33)
+import Linear.Matrix (M22, M44, transpose)
 import Linear.V2 (V2 (..))
 import Linear.V3 (V3 (..))
 import Linear.V4 (V4 (..))

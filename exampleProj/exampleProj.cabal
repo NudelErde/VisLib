@@ -62,13 +62,13 @@ executable exampleProj
     main-is:          Main.hs
 
     -- Modules included in this executable, other than Main.
-    other-modules: Shader, Math, Object
+    other-modules: Shader, Math, Object, World, Light, Player, Load
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
 
     -- Other library packages from which modules are imported.
-    build-depends:    base ^>=4.19.1.0, OpenGL, StateVar, GLUT, mtl, OpenGLRaw, composition, template-haskell, mtl, vislib, colour, lens, linear
+    build-depends:    base ^>=4.19.1.0, OpenGL, StateVar, GLUT, mtl, OpenGLRaw, composition, template-haskell, mtl, vislib, colour, lens, linear, array, bytestring, clock, concurrent-extra
 
     -- Directories containing source files.
     hs-source-dirs:   exe

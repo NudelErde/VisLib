@@ -1,4 +1,5 @@
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE DeriveLift #-}
 module VisLib.Buffer.Image where
 import VisLib.Base
 import Control.Monad.IO.Class (MonadIO(liftIO))
@@ -10,13 +11,22 @@ import Data.Word
 import qualified Data.ByteString as BS
 import Data.ByteString (ByteString)
 import Data.ByteString.Char8 (pack, unpack)
+import Data.Char
+import Language.Haskell.TH.Syntax (Lift)
 
-data ImageType = PNG | JPEG | PPM deriving (Show)
+data ImageType = PNG | JPEG | PPM deriving (Show, Lift)
+
+guessImageType :: String -> Maybe ImageType
+guessImageType s = case toLower <$> reverse (takeWhile (/= '.') $ reverse s) of
+  "png" -> Just PNG
+  "jpg" -> Just JPEG
+  "ppm" -> Just PPM
+  _ -> Nothing
 
 parseImage' :: String -> ComputationIO Image
 parseImage' filename = do
   content <- liftIO $ BS.readFile filename
-  let ext = reverse $ takeWhile (/= '.') $ reverse filename
+  let ext = toLower <$> reverse (takeWhile (/= '.') $ reverse filename)
   case ext of
     "png" -> parseImage PNG content
     "jpg" -> parseImage JPEG content
