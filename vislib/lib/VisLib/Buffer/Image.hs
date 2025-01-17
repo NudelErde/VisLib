@@ -27,11 +27,9 @@ parseImage' :: String -> ComputationIO Image
 parseImage' filename = do
   content <- liftIO $ BS.readFile filename
   let ext = toLower <$> reverse (takeWhile (/= '.') $ reverse filename)
-  case ext of
-    "png" -> parseImage PNG content
-    "jpg" -> parseImage JPEG content
-    "ppm" -> parseImage PPM content
-    _ -> throwError $ "Unknown image format: " ++ ext
+  case guessImageType filename of
+    Just imgType -> parseImage imgType content
+    Nothing -> throwError $ "Unknown image format: " ++ ext
 
 readSafe :: Read a => ByteString -> ComputationIO a
 readSafe s = case reads $ unpack s of

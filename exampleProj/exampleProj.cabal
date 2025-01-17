@@ -68,7 +68,24 @@ executable exampleProj
     -- other-extensions:
 
     -- Other library packages from which modules are imported.
-    build-depends:    base ^>=4.19.1.0, OpenGL, StateVar, GLUT, mtl, OpenGLRaw, composition, template-haskell, mtl, vislib, colour, lens, linear, array, bytestring, clock, concurrent-extra
+    build-depends:    base ^>=4.19.1.0, 
+                      OpenGL, 
+                      StateVar, 
+                      GLUT, 
+                      mtl, 
+                      OpenGLRaw, 
+                      composition, 
+                      template-haskell, 
+                      mtl, 
+                      vislib, 
+                      colour, 
+                      lens, 
+                      linear, 
+                      array, 
+                      bytestring, 
+                      clock, 
+                      concurrent-extra,
+                      process
 
     -- Directories containing source files.
     hs-source-dirs:   exe

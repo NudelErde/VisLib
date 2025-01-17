@@ -65,7 +65,6 @@ getAspectRatio = do
 
 display :: World -> Player -> Int -> GLUT.DisplayCallback
 display world player count = modifyError error $ do
-  liftIO $ GLUT.clear [GLUT.ColorBuffer, GLUT.DepthBuffer]
   let time = fromIntegral count / 60
   aspect <- liftIO getAspectRatio
 
@@ -89,8 +88,6 @@ display world player count = modifyError error $ do
 
   forM_ (world ^. objects) $ draw time config
 
-  liftIO GLUT.swapBuffers
-
 repeatTimer' :: IO GLUT.Timeout -> IO ()
 repeatTimer' f = f >>= (`GLUT.addTimerCallback` repeatTimer' f)
 
@@ -99,9 +96,14 @@ inputCallback playerRef key keystate modifiers position = do
   playerRef $~! updatePlayer (PlayerInputEvent key keystate modifiers position)
   return ()
 
+$(embedAssets "asset" "../assets/")
+
+gitInfo :: GitInfo
+gitInfo = $(embedGitInfo)
+
 main :: IO ()
 main = do
-  spawnWindow
+  spawnWindow 
 
   objs <- modifyError error $ do
     let defaultMaterial =
@@ -111,9 +113,9 @@ main = do
               _specularStrength = 0.2,
               _shininess = 32
             }
-    cube1 <- createVertexOnlyObject (vf3 0.8 0.6 0.6) (translate4 1 (-5) (-5)) =<< $(readObjEmbedded "../CubeVert.obj")
-    cube2 <- createPhongNormalObject (vf3 0.6 0.8 0.6) defaultMaterial (translate4 (-1) (-5) (-5)) =<< $(readObjEmbedded "../Cube.obj")
-    teapot <- createPhongNormalObject (vf3 0.6 0.6 0.8) defaultMaterial (translate4 0 (-3) (-5) !*! scale4 0.1 0.1 0.1) =<< $(readObjEmbedded "../teapot.obj")
+    cube1 <- createVertexOnlyObject (vf3 0.8 0.6 0.6) (translate4 1 (-5) (-5)) =<< assetCubeVert
+    cube2 <- createPhongNormalObject (vf3 0.6 0.8 0.6) defaultMaterial (translate4 (-1) (-5) (-5)) =<< assetCube
+    teapot <- createPhongNormalObject (vf3 0.6 0.6 0.8) defaultMaterial (translate4 0 (-3) (-5) !*! scale4 0.1 0.1 0.1) =<< assetTeapot
 
     return [ObjectContainer cube1, ObjectContainer cube2, ObjectContainer teapot]
   frameCount <- newIORef (0 :: Int)
@@ -128,7 +130,9 @@ main = do
     p <- get player
     f <- get frameCount
     frameCount $~! (+ 1)
+    GLUT.clear [GLUT.ColorBuffer, GLUT.DepthBuffer]
     lock $ display w p f
+    GLUT.swapBuffers
 
   lastTimeRef <- newIORef =<< getTime Monotonic
   repeatTimer' $ do
