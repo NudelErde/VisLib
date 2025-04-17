@@ -1,2 +1,6 @@
 packages: exampleProj/
           vislib/
+          exampleVulkan/
+
+package vulkan
+  flags: +safe-foreign-calls

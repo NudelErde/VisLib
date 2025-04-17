@@ -10,6 +10,7 @@ import VisLib.Buffer.VertexBuffer (drawBuffer)
 import VisLib.Shader.Monad
 import Shader
 import Control.Lens ((^.))
+import VisLib.Shader.ShaderTypes
 
 data SceneConfiguration = SceneConfiguration
   { viewMatrixSC :: M44 Float

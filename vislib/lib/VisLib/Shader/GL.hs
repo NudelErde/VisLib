@@ -17,6 +17,7 @@ import Linear.V3 (V3 (..))
 import Linear.V4 (V4 (..))
 import VisLib.Base
 import Control.Monad.State
+import VisLib.Shader.ShaderTypes
 
 data UniformValueContainer = forall a. (UniformValue a) => UniformValueContainer a
 

@@ -20,6 +20,7 @@ import Linear.V3 (V3 (..))
 import Linear.V4 (V4 (..))
 import VisLib.Base
 import VisLib.Shader.GL
+import VisLib.Shader.ShaderTypes
 
 class (ShaderTypeable a) => ShaderTerm a where
   toOp :: a -> Op

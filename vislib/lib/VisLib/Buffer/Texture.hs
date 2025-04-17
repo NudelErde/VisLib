@@ -14,6 +14,7 @@ import Control.Monad.Except
 import VisLib.Shader.GL
 import Control.Monad.Trans.State
 import Data.Array.Storable (StorableArray, withStorableArray)
+import VisLib.Shader.ShaderTypes
 
 instance ShaderTypeable Texture where
   getType _ = Sampler Sampler2D

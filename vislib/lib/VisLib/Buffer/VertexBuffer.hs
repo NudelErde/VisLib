@@ -47,7 +47,7 @@ bindBuffer (GLBuffer vao vbo ibo _ _ _) = do
   return ()
 
 storableArraySize :: (Storable a, Num b) => [a] -> b
-storableArraySize = fromIntegral . ((*) <$> sizeOf . head <*> length)
+storableArraySize = sum . map (fromIntegral . sizeOf)
 
 writeVertices :: (Storable a) => Buffer -> [a] -> ComputationIO ()
 writeVertices (GLBuffer _ vbo _ bufSize _ _) d = liftIO $ withArray d $ \ptr -> do

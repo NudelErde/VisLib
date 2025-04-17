@@ -13,7 +13,7 @@ import System.Exit
 import System.Process
 import VisLib.Base
 import VisLib.Buffer.Image
-import VisLib.Buffer.ObjectFile (parseObjectFile, parseObjectFile')
+import VisLib.Buffer.ObjectFile
 import VisLib.Buffer.Texture
 import VisLib.Buffer.VertexBuffer
 import VisLib.Embed
@@ -24,7 +24,7 @@ import Data.Char (isSpace)
 
 readObj :: FilePath -> ComputationIO Buffer
 readObj p = do
-  (description, vertices, indices) <- parseObjectFile' p
+  (description, vertices, indices) <- parseObjectFile p []
   buffer <- createBuffer description
   bufferData buffer $= (vertices, indices <&> fromIntegral)
   return buffer

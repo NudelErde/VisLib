@@ -32,7 +32,6 @@ phong lightPos viewPos normal fragPos (PhongMaterial ambientStrength diffuseStre
   let diffuse' = diffuse !* diffuseStrength
   let specular' = specular !* specularStrength
   return $ ambient !+ diffuse' !+ specular'
-phong _ _ _ _ _ = error "phong: invalid arguments"
 
 colorFromPos :: (ShaderTerm a) => a -> ShaderM Op
 colorFromPos pos = do

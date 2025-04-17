@@ -29,6 +29,7 @@ import Shader
 import VisLib.Base
 import VisLib.Shader.GL
 import VisLib.Shader.Monad
+import VisLib.Shader.ShaderTypes
 import World
 import Load
 import Control.Lens.Operators ((%~))

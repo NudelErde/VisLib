@@ -29,7 +29,7 @@ version:            0.1.0.0
 -- description:
 
 -- URL for the project homepage or repository.
-homepage:           katharina.heidenreich02@gmail.com
+-- homepage:           
 
 -- The license under which the package is released.
 license:            MIT
@@ -41,7 +41,7 @@ license-file:       LICENSE
 author:             Katharina Heidenreich
 
 -- An email address to which users can send suggestions, bug reports, and patches.
-maintainer:         katharina.heidenreich@stud.tu-darmstadt.de
+maintainer:         katharina.heidenreich02@gmail.com
 
 -- A copyright notice.
 -- copyright:
@@ -71,9 +71,15 @@ library
                       VisLib.Buffer.Texture,
                       VisLib.Buffer.Image,
                       VisLib.Embed,
+                      VisLib.Parse,
+                      VisLib.Shader.ShaderTypes,
+                      VisLib.App,
+                      VisLib.Vulkan.Vulkan,
+                      VisLib.Vulkan.Memory,
+                      VisLib.Loader.GLTF
 
     -- Modules included in this library but not exported.
-    other-modules: VisLib.Shader.ShaderTypes
+    -- other-modules: 
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
@@ -94,7 +100,17 @@ library
                       array,
                       bytestring,
                       directory,
-                      filepath
+                      filepath,
+                      megaparsec,
+                      hashmap,
+                      sdl2, 
+                      vulkan, 
+                      vector,
+                      extra, 
+                      indexed-traversable, 
+                      vulkan-utils,
+                      aeson,
+                      containers,
 
     -- Directories containing source files.
     hs-source-dirs:   lib

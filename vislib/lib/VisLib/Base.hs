@@ -2,7 +2,7 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# LANGUAGE GADTs #-}
 
-module VisLib.Base (module VisLib.Base, module VisLib.Shader.ShaderTypes) where
+module VisLib.Base (module VisLib.Base) where
 
 import Control.Lens
 import Control.Monad.Except
@@ -19,6 +19,10 @@ type ErrorType = String
 type ComputationIO a = ExceptT ErrorType IO a
 
 type Computation a = Except ErrorType a
+
+fromJustM :: MonadFail m => Maybe a -> m a
+fromJustM (Just x) = return x
+fromJustM Nothing = fail "fromJustM: Nothing"
 
 data UniformInfo = UniformInfo [Type] [String]
 
