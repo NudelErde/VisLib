@@ -82,7 +82,7 @@ data GLTFPrimitive = GLTFPrimitive {
 }
 
 instance FromJSON GLTFPrimitive where
-  parseJSON (Object v) = GLTFPrimitive . 
+  parseJSON (Object v) = GLTFPrimitive .
     M.toList <$> (v .:? "attributes" .!= M.empty)
     <*> v .:? "indices"
     <*> v .:? "material"
@@ -320,7 +320,7 @@ getLayoutForAccessor _gltf@GLTF{accessors=accessors, bufferViews=bufferViews} _g
     type' <- type' accessor
     let size = sizeOfComponentType componentType' * sizeOfType type'
     return size
-  
+
   bufferViewIndex <- bufferView accessor
   bufferView' <- bufferViews !? bufferViewIndex
   bufferIndex <- buffer bufferView'
@@ -328,7 +328,7 @@ getLayoutForAccessor _gltf@GLTF{accessors=accessors, bufferViews=bufferViews} _g
   let byteStride = fromMaybe elementSize (viewByteStride bufferView')
   let realOffset = byteOffset + offset
   return (realOffset, count, byteStride, elementSize, bufferIndex)
-  
+
 sizeOfComponentType :: Int -> Int
 sizeOfComponentType 5120 = 1 -- signed byte
 sizeOfComponentType 5121 = 1 -- unsigned byte
@@ -347,6 +347,28 @@ sizeOfType "MAT2" = 4
 sizeOfType "MAT3" = 9
 sizeOfType "MAT4" = 16
 sizeOfType _ = error "Unknown type"
+
+getIndexBuffer :: GLTF -> Int -> Int -> Maybe (Int, Int, Int)
+getIndexBuffer gltf meshIndex primitiveIndex = do
+  mesh <- meshes gltf !? meshIndex
+  primitive <- primitives mesh !? primitiveIndex
+  indexAccessorIndex <- indices primitive
+  accessor <- accessors gltf !? indexAccessorIndex
+  guard $ type' accessor == Just "SCALAR"
+  let count = fromJust (accessorCount accessor)
+  let indexType = sizeOfComponentType (fromJust (componentType accessor))
+  let bufferViewIndex = fromJust (bufferView accessor)
+  return (bufferViewIndex, count, indexType)
+
+getVertexCount :: GLTF -> Int -> Int -> Int
+getVertexCount gltf meshIndex primitiveIndex =
+  let mesh = meshes gltf !! meshIndex
+      primitive = primitives mesh !! primitiveIndex
+      attribute = head (attributes primitive)
+      accessorIndex = snd attribute
+      accessor = accessors gltf !! accessorIndex
+      count = fromJust (accessorCount accessor)
+  in count
 
 testGLTF :: IO (GLTF, [ByteString])
 testGLTF = do

@@ -102,11 +102,11 @@ bindBuffer memoryPropertyFlags buffer = runStateT $ do
   (idx, memoryArea) <- case memoryAreas'' of
     [] -> do
       allocationSize <- lift . getNewAllocationSize =<< get
-      index' <- StateT (createMemory memReqBits memoryPropertyFlags allocationSize)
+      index' <- StateT (createMemory memReqBits memoryPropertyFlags $ max allocationSize $ fromIntegral allocSize)
       buffer' <- gets (^?! memoryBuffers . ix index')
       return (index', buffer')
     b : _ -> return b
-  VK.bindBufferMemory device' buffer (_memoryDeviceMemory memoryArea) (fromIntegral $ _memorySize memoryArea)
+  VK.bindBufferMemory device' buffer (_memoryDeviceMemory memoryArea) (fromIntegral $ _memoryUsedSize memoryArea)
   memoryBuffers . ix idx . memoryUsedSize += fromIntegral allocSize
   return $ MemoryBinding idx (fromIntegral $ _memoryUsedSize memoryArea) (fromIntegral allocSize) buffer
 

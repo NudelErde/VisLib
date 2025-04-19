@@ -20,6 +20,7 @@ import Data.Maybe
 import Data.List
 import Data.Bits
 import qualified Data.ByteString as BS
+import Data.Traversable.WithIndex
 
 getBufferData :: MonadIO io => GLTF -> [ByteString] -> Int -> io (Maybe ByteString)
 getBufferData gltf glbBuffers bufferIndex = do
@@ -29,8 +30,8 @@ getBufferData gltf glbBuffers bufferIndex = do
     Nothing -> do
       return $ glbBuffers !? bufferIndex
 
-createBufferFromGLTF :: MonadIO io => Int -> GLTF -> [ByteString] -> VK.Device -> ResourceMutable MemoryState -> AppMonad io d r (VK.Buffer, MemoryBinding)
-createBufferFromGLTF bufferViewIndex gltf glbBuffers device memoryAllocator = do
+createBufferFromGLTF :: MonadIO io => GLTF -> [ByteString] -> VK.Device -> ResourceMutable MemoryState -> Int -> AppMonad io d r (VK.Buffer, MemoryBinding)
+createBufferFromGLTF gltf glbBuffers device memoryAllocator bufferViewIndex = do
   let bufferView = bufferViews gltf !! bufferViewIndex
   let bufferIndex = fromJust (buffer bufferView)
   bufferData <- fromJust <$> getBufferData gltf glbBuffers bufferIndex
@@ -46,3 +47,9 @@ createBufferFromGLTF bufferViewIndex gltf glbBuffers device memoryAllocator = do
   writeBufferBS binding data'' memoryAllocator'
 
   return (buffer, binding)
+
+loadAllBuffers :: MonadIO io => GLTF -> [ByteString] -> VK.Device -> ResourceMutable MemoryState -> AppMonad io d r [(VK.Buffer, MemoryBinding)]
+loadAllBuffers gltf glbBuffers device memoryAllocator = do
+  let bvs = bufferViews gltf
+  iforM bvs $ \i _bufferView ->
+    createBufferFromGLTF gltf glbBuffers device memoryAllocator i

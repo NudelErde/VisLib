@@ -172,102 +172,102 @@ createRenderPass device VK.SwapchainCreateInfoKHR {..} = do
           }
   VK.withRenderPass device renderPassCreateInfo Nothing $ resourceN "render pass"
 
-createPipeline :: (MonadIO io) => VK.Device -> ShaderDescriptionCompiled -> VK.RenderPass -> AppMonad io d r (VK.Pipeline, VK.PipelineLayout)
-createPipeline device ShaderDescriptionCompiled{..} renderPass = do
-  liftIO $ print _pushConstants'
-  let layoutInfo = (zero :: VK.PipelineLayoutCreateInfo) {
-    VK.pushConstantRanges = _pushConstants'
-  }
-  layout <- VK.withPipelineLayout device layoutInfo Nothing $ resourceN "pipeline layout"
-  let pipelineCreateInfo =
-        (zero :: VK.GraphicsPipelineCreateInfo '[])
-          { VK.stageCount = 2,
-            VK.stages =
-              V.fromList [(_vertexShaderModule, VK.SHADER_STAGE_VERTEX_BIT), (_fragmentShaderModule, VK.SHADER_STAGE_FRAGMENT_BIT)] <&> \(shaderModule, stage) -> do
-                VK.SomeStruct
-                  (zero :: VK.PipelineShaderStageCreateInfo '[])
-                    { VK.stage = stage,
-                      VK.module' = shaderModule,
-                      VK.name = "main"
-                    },
-            VK.vertexInputState =
-              Just $
-                VK.SomeStruct
-                  (zero :: VK.PipelineVertexInputStateCreateInfo '[])
-                    { VK.vertexBindingDescriptions = _vertexInputBindingDescription',
-                      VK.vertexAttributeDescriptions = _vertexInputAttributeDescription'
-                    },
-            VK.inputAssemblyState =
-              Just
-                (zero :: VK.PipelineInputAssemblyStateCreateInfo)
-                  { VK.topology = VK.PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-                    VK.primitiveRestartEnable = False
-                  },
-            VK.viewportState =
-              Just $
-                VK.SomeStruct
-                  (zero :: VK.PipelineViewportStateCreateInfo '[])
-                    { VK.viewportCount = 1,
-                      VK.scissorCount = 1
-                    },
-            VK.rasterizationState =
-              Just $
-                VK.SomeStruct
-                  (zero :: VK.PipelineRasterizationStateCreateInfo '[])
-                    { VK.depthClampEnable = False,
-                      VK.rasterizerDiscardEnable = False,
-                      VK.polygonMode = VK.POLYGON_MODE_FILL,
-                      VK.lineWidth = 1.0,
-                      VK.cullMode = VK.CULL_MODE_NONE,
-                      VK.frontFace = VK.FRONT_FACE_COUNTER_CLOCKWISE,
-                      VK.depthBiasEnable = False
-                    },
-            VK.multisampleState =
-              Just $
-                VK.SomeStruct
-                  (zero :: VK.PipelineMultisampleStateCreateInfo '[])
-                    { VK.sampleShadingEnable = False,
-                      VK.rasterizationSamples = VK.SAMPLE_COUNT_1_BIT
-                    },
-            VK.colorBlendState =
-              Just $
-                VK.SomeStruct
-                  (zero :: VK.PipelineColorBlendStateCreateInfo '[])
-                    { VK.logicOpEnable = False,
-                      VK.attachments =
-                        V.fromList
-                          [ (zero :: VK.PipelineColorBlendAttachmentState)
-                              { VK.blendEnable = False,
-                                VK.colorWriteMask = VK.COLOR_COMPONENT_R_BIT .|. VK.COLOR_COMPONENT_G_BIT .|. VK.COLOR_COMPONENT_B_BIT .|. VK.COLOR_COMPONENT_A_BIT
-                              }
-                          ],
-                      VK.attachmentCount = 1
-                    },
-            VK.dynamicState =
-              Just
-                (zero :: VK.PipelineDynamicStateCreateInfo)
-                  { VK.dynamicStates = V.fromList [VK.DYNAMIC_STATE_VIEWPORT, VK.DYNAMIC_STATE_SCISSOR]
-                  },
-            VK.layout = layout,
-            VK.renderPass = renderPass,
-            VK.subpass = 0
-          }
-  (_, pipelines) <- VK.withGraphicsPipelines device VK.NULL_HANDLE (V.fromList [VK.SomeStruct pipelineCreateInfo]) Nothing $ resourceN "graphics pipeline"
+-- createPipeline :: (MonadIO io) => VK.Device -> ShaderDescriptionCompiled -> VK.RenderPass -> AppMonad io d r (VK.Pipeline, VK.PipelineLayout)
+-- createPipeline device ShaderDescriptionCompiled{..} renderPass = do
+--   liftIO $ print _pushConstants'
+--   let layoutInfo = (zero :: VK.PipelineLayoutCreateInfo) {
+--     VK.pushConstantRanges = _pushConstants'
+--   }
+--   layout <- VK.withPipelineLayout device layoutInfo Nothing $ resourceN "pipeline layout"
+--   let pipelineCreateInfo =
+--         (zero :: VK.GraphicsPipelineCreateInfo '[])
+--           { VK.stageCount = 2,
+--             VK.stages =
+--               V.fromList [(_vertexShaderModule, VK.SHADER_STAGE_VERTEX_BIT), (_fragmentShaderModule, VK.SHADER_STAGE_FRAGMENT_BIT)] <&> \(shaderModule, stage) -> do
+--                 VK.SomeStruct
+--                   (zero :: VK.PipelineShaderStageCreateInfo '[])
+--                     { VK.stage = stage,
+--                       VK.module' = shaderModule,
+--                       VK.name = "main"
+--                     },
+--             VK.vertexInputState =
+--               Just $
+--                 VK.SomeStruct
+--                   (zero :: VK.PipelineVertexInputStateCreateInfo '[])
+--                     { VK.vertexBindingDescriptions = _vertexInputBindingDescription',
+--                       VK.vertexAttributeDescriptions = _vertexInputAttributeDescription'
+--                     },
+--             VK.inputAssemblyState =
+--               Just
+--                 (zero :: VK.PipelineInputAssemblyStateCreateInfo)
+--                   { VK.topology = VK.PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+--                     VK.primitiveRestartEnable = False
+--                   },
+--             VK.viewportState =
+--               Just $
+--                 VK.SomeStruct
+--                   (zero :: VK.PipelineViewportStateCreateInfo '[])
+--                     { VK.viewportCount = 1,
+--                       VK.scissorCount = 1
+--                     },
+--             VK.rasterizationState =
+--               Just $
+--                 VK.SomeStruct
+--                   (zero :: VK.PipelineRasterizationStateCreateInfo '[])
+--                     { VK.depthClampEnable = False,
+--                       VK.rasterizerDiscardEnable = False,
+--                       VK.polygonMode = VK.POLYGON_MODE_FILL,
+--                       VK.lineWidth = 1.0,
+--                       VK.cullMode = VK.CULL_MODE_NONE,
+--                       VK.frontFace = VK.FRONT_FACE_COUNTER_CLOCKWISE,
+--                       VK.depthBiasEnable = False
+--                     },
+--             VK.multisampleState =
+--               Just $
+--                 VK.SomeStruct
+--                   (zero :: VK.PipelineMultisampleStateCreateInfo '[])
+--                     { VK.sampleShadingEnable = False,
+--                       VK.rasterizationSamples = VK.SAMPLE_COUNT_1_BIT
+--                     },
+--             VK.colorBlendState =
+--               Just $
+--                 VK.SomeStruct
+--                   (zero :: VK.PipelineColorBlendStateCreateInfo '[])
+--                     { VK.logicOpEnable = False,
+--                       VK.attachments =
+--                         V.fromList
+--                           [ (zero :: VK.PipelineColorBlendAttachmentState)
+--                               { VK.blendEnable = False,
+--                                 VK.colorWriteMask = VK.COLOR_COMPONENT_R_BIT .|. VK.COLOR_COMPONENT_G_BIT .|. VK.COLOR_COMPONENT_B_BIT .|. VK.COLOR_COMPONENT_A_BIT
+--                               }
+--                           ],
+--                       VK.attachmentCount = 1
+--                     },
+--             VK.dynamicState =
+--               Just
+--                 (zero :: VK.PipelineDynamicStateCreateInfo)
+--                   { VK.dynamicStates = V.fromList [VK.DYNAMIC_STATE_VIEWPORT, VK.DYNAMIC_STATE_SCISSOR]
+--                   },
+--             VK.layout = layout,
+--             VK.renderPass = renderPass,
+--             VK.subpass = 0
+--           }
+--   (_, pipelines) <- VK.withGraphicsPipelines device VK.NULL_HANDLE (V.fromList [VK.SomeStruct pipelineCreateInfo]) Nothing $ resourceN "graphics pipeline"
 
-  return (V.head pipelines, layout)
+--   return (V.head pipelines, layout)
 
-compileShaderDescription :: MonadIO io => VK.Device -> ShaderDescription -> AppMonad io d r ShaderDescriptionCompiled
-compileShaderDescription device ShaderDescription{..} = do
-  vertexShader' <- createShaderModule device _vertexShaderSource
-  fragmentShader' <- createShaderModule device _fragmentShaderSource
-  return
-    ShaderDescriptionCompiled
-      { _vertexShaderModule = vertexShader',
-        _fragmentShaderModule = fragmentShader',
-        _vertexInputBindingDescription' = _vertexInputBindingDescription,
-        _vertexInputAttributeDescription' = _vertexInputAttributeDescription,
-        _pushConstants' = _pushConstants
-      }
+-- compileShaderDescription :: MonadIO io => VK.Device -> ShaderDescription -> AppMonad io d r ShaderDescriptionCompiled
+-- compileShaderDescription device ShaderDescription{..} = do
+--   vertexShader' <- createShaderModule device _vertexShaderSource
+--   fragmentShader' <- createShaderModule device _fragmentShaderSource
+--   return
+--     ShaderDescriptionCompiled
+--       { _vertexShaderModule = vertexShader',
+--         _fragmentShaderModule = fragmentShader',
+--         _vertexInputBindingDescription' = _vertexInputBindingDescription,
+--         _vertexInputAttributeDescription' = _vertexInputAttributeDescription,
+--         _pushConstants' = _pushConstants
+--       }
 
 createShaderModule :: (MonadIO io) => VK.Device -> ByteString -> AppMonad io d r VK.ShaderModule
 createShaderModule device code = do
@@ -470,15 +470,15 @@ getAvailableInstanceExtensions = do
   (_, extensions) <- VK.enumerateInstanceExtensionProperties Nothing
   return $ map VK.extensionName $ V.toList extensions
 
-present :: (MonadIO io) => VK.SwapchainKHR -> VK.Semaphore -> VK.Queue -> Word32 -> io ()
-present swapChain waitSemaphore presentQueue index = do
-  let presentInfo =
-        (zero :: VK.PresentInfoKHR '[])
-          { VK.swapchains = V.fromList [swapChain],
-            VK.imageIndices = V.fromList [index],
-            VK.waitSemaphores = V.fromList [waitSemaphore]
-          }
-  void $ VK.queuePresentKHR presentQueue presentInfo
+-- present :: (MonadIO io) => VK.SwapchainKHR -> VK.Semaphore -> VK.Queue -> Word32 -> io ()
+-- present swapChain waitSemaphore presentQueue index = do
+--   let presentInfo =
+--         (zero :: VK.PresentInfoKHR '[])
+--           { VK.swapchains = V.fromList [swapChain],
+--             VK.imageIndices = V.fromList [index],
+--             VK.waitSemaphores = V.fromList [waitSemaphore]
+--           }
+--   void $ VK.queuePresentKHR presentQueue presentInfo
 
 foreign import ccall "wrapper" mkDebugMessage :: VK.FN_vkDebugUtilsMessengerCallbackEXT -> IO VK.PFN_vkDebugUtilsMessengerCallbackEXT
 
