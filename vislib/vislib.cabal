@@ -76,7 +76,11 @@ library
                       VisLib.App,
                       VisLib.Vulkan.Vulkan,
                       VisLib.Vulkan.Memory,
-                      VisLib.Loader.GLTF
+                      VisLib.Loader.GLTF,
+                      VisLib.Vulkan.Model,
+                      VisLib.Vulkan.Shader,
+                      VisLib.Vulkan.ShaderTH,
+                      
 
     -- Modules included in this library but not exported.
     -- other-modules: 

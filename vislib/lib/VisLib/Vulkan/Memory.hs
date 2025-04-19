@@ -11,7 +11,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeOperators #-}
 
-module VisLib.Vulkan.Memory where
+module VisLib.Vulkan.Memory (MemoryState, MemoryBinding(..), createMemoryState, createMemory, bindBuffer, writeBufferFrom, writeBufferPtr, writeBufferBS, writeBufferArray) where
 
 import Control.Lens
 import Control.Monad (guard, when)
@@ -101,7 +101,8 @@ bindBuffer memoryPropertyFlags buffer = runStateT $ do
   let memoryAreas'' = sortOn (\(_, x) -> _memorySize x - _memoryUsedSize x) memoryAreas'
   (idx, memoryArea) <- case memoryAreas'' of
     [] -> do
-      index' <- StateT (createMemory memReqBits memoryPropertyFlags (fromIntegral allocSize))
+      allocationSize <- lift . getNewAllocationSize =<< get
+      index' <- StateT (createMemory memReqBits memoryPropertyFlags allocationSize)
       buffer' <- gets (^?! memoryBuffers . ix index')
       return (index', buffer')
     b : _ -> return b
@@ -109,13 +110,13 @@ bindBuffer memoryPropertyFlags buffer = runStateT $ do
   memoryBuffers . ix idx . memoryUsedSize += fromIntegral allocSize
   return $ MemoryBinding idx (fromIntegral $ _memoryUsedSize memoryArea) (fromIntegral allocSize) buffer
 
-writeBufferFrom  :: (MonadIO io) => MemoryBinding -> (Ptr () -> IO ()) -> Int -> MemoryState -> AppMonad io d r MemoryState
-writeBufferFrom MemoryBinding{..} cp size memState = scope $ execStateT ?? memState $ do
+writeBufferFrom  :: (MonadIO io) => MemoryBinding -> (Ptr () -> IO ()) -> Int -> MemoryState -> AppMonad io d r ()
+writeBufferFrom MemoryBinding{..} cp size memState = scope $ do
   when (size > _memoryBindingSize) $ error "Buffer size is too small"
-  device' <- use device
-  MemoryArea{..} <- gets (^?! memoryBuffers . ix _memoryAreaIndex)
+  let device' = memState ^. device
+  let MemoryArea{..} = memState ^?! memoryBuffers . ix _memoryAreaIndex
   if VK.propertyFlags _memoryType .&. VK.MEMORY_PROPERTY_HOST_VISIBLE_BIT /= zero then do
-    ptr <- lift $ VK.withMappedMemory device' _memoryDeviceMemory (fromIntegral _memoryOffset) (fromIntegral size) zero resource
+    ptr <- VK.withMappedMemory device' _memoryDeviceMemory (fromIntegral _memoryOffset) (fromIntegral size) zero resource
     liftIO $ cp ptr
     when (VK.propertyFlags _memoryType .&. VK.MEMORY_PROPERTY_HOST_COHERENT_BIT == zero) $ do
       lift $ VK.invalidateMappedMemoryRanges device' $ V.fromList [VK.MappedMemoryRange{
@@ -125,26 +126,19 @@ writeBufferFrom MemoryBinding{..} cp size memState = scope $ execStateT ?? memSt
       }]
   else
     error "Buffer is not host visible (TODO STAGING BUFFER)"
-  undefined
 
 
-writeBufferPtr :: (MonadIO io) => MemoryBinding -> Ptr () -> Int -> MemoryState -> AppMonad io d r MemoryState
+writeBufferPtr :: (MonadIO io) => MemoryBinding -> Ptr () -> Int -> MemoryState -> AppMonad io d r ()
 writeBufferPtr binding ptr size = writeBufferFrom binding (\destPtr -> copyBytes destPtr ptr size) size
 
-writeBufferBS :: (MonadIO io) => MemoryBinding -> ByteString -> MemoryState -> AppMonad io d r MemoryState
+writeBufferBS :: (MonadIO io) => MemoryBinding -> ByteString -> MemoryState -> AppMonad io d r ()
 writeBufferBS binding bs memState = do
   let size = BS.length bs
   let cp destPtr = BS.useAsCStringLen bs $ uncurry (copyBytes (castPtr destPtr))
   writeBufferFrom binding cp size memState
 
-writeBufferArray :: (MonadIO io, Storable a) => MemoryBinding -> [a] -> MemoryState -> AppMonad io d r MemoryState
+writeBufferArray :: (MonadIO io, Storable a) => MemoryBinding -> [a] -> MemoryState -> AppMonad io d r ()
 writeBufferArray binding xs memState = do
   let size = sum $ sizeOf <$> xs
   let cp destPtr = withArray xs $ \srcPtr -> copyBytes (castPtr destPtr) srcPtr size
   writeBufferFrom binding cp size memState
-
--- writeBufferVector :: (MonadIO io, Storable a) => MemoryBinding -> VS.Vector a -> MemoryState -> AppMonad io d r MemoryState
--- writeBufferVector binding xs memState = do
-  -- -- let size = VS.len $ sizeOf <$> xs
-  -- -- let cp destPtr = VS.unsafeWith xs $ \srcPtr -> copyBytes (castPtr destPtr) srcPtr size
-  -- writeBufferFrom binding cp size memState

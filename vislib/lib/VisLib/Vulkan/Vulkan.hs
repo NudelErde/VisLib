@@ -41,8 +41,6 @@ import qualified Vulkan as VK
 import Vulkan.CStruct.Extends (pattern (:&), pattern (::&))
 import qualified Vulkan.CStruct.Extends as VK
 import Vulkan.Zero
-import Vulkan.Utils.ShaderQQ.GLSL.Shaderc
-import Control.Exception (bracket)
 
 data Queues = Queues
   { _graphicsQueue :: VK.Queue,
@@ -51,7 +49,7 @@ data Queues = Queues
     _presentQueue :: VK.Queue,
     _presentCommandPool :: VK.CommandPool,
     _presentFamilyIndex :: Int
-  }
+  } deriving (Show, Eq)
 
 $(makeLenses ''Queues)
 
@@ -99,19 +97,19 @@ createCommandBuffers device commandPool count = do
           }
   VK.withCommandBuffers device commandBufferAllocateInfo $ resourceN "command buffer"
 
-createFramebuffers :: (MonadIO io) => VK.Device -> VK.RenderPass -> Vector VK.ImageView -> VK.SwapchainCreateInfoKHR '[] -> AppMonad io d r (Vector VK.Framebuffer, AppMonad io d r ())
+createFramebuffers :: (MonadIO io) => VK.Device -> VK.RenderPass -> Vector VK.ImageView -> VK.SwapchainCreateInfoKHR '[] -> AppMonad io d r (ResourceMutable (Vector VK.Framebuffer))
 createFramebuffers device renderPass imageViews VK.SwapchainCreateInfoKHR {..} = do
   let VK.Extent2D width height = imageExtent
-  fmap (second (V.sequence_ . V.reverse) . V.unzip) $ iforM imageViews $ \index imageView -> do
-    let framebufferCreateInfo =
-          (zero :: VK.FramebufferCreateInfo '[])
-            { VK.renderPass = renderPass,
-              VK.attachments = V.fromList [imageView],
-              VK.width = width,
-              VK.height = height,
-              VK.layers = 1
-            }
-    VK.withFramebuffer device framebufferCreateInfo Nothing $ resourceRN ("framebuffer " ++ show index)
+  let prepareWithFrameBuffer = fmap $ \imageView -> 
+        let framebufferCreateInfo = (zero :: VK.FramebufferCreateInfo '[])
+              { VK.renderPass = renderPass,
+                VK.attachments = V.fromList [imageView],
+                VK.width = width,
+                VK.height = height,
+                VK.layers = 1
+              }
+        in VK.withFramebuffer device framebufferCreateInfo Nothing
+  resourceMN' "framebuffer" $ prepareWithFrameBuffer imageViews
 
 getViewPortScissor :: VK.Extent2D -> (VK.Viewport, VK.Rect2D)
 getViewPortScissor extent@(VK.Extent2D width height) = (viewport, scissor)
@@ -279,7 +277,8 @@ createShaderModule device code = do
           }
   VK.withShaderModule device createInfo Nothing $ resourceN "shader module"
 
-createSwapChain :: (MonadIO io) => VK.PhysicalDevice -> VK.Device -> Queues -> VK.SurfaceKHR -> AppMonad io d () (VK.SwapchainKHR, VK.SwapchainCreateInfoKHR '[], Vector VK.Image, Vector VK.ImageView, AppMonad io d () ())
+
+createSwapChain :: (MonadIO io) => VK.PhysicalDevice -> VK.Device -> Queues -> VK.SurfaceKHR -> AppMonad io d r (ResourceMutable VK.SwapchainKHR, VK.SwapchainCreateInfoKHR '[], ResourceMutable (Vector VK.ImageView))
 createSwapChain physicalDevice device queues surface = do
   VK.SurfaceCapabilitiesKHR
     { VK.currentExtent = currentExtent,
@@ -320,36 +319,35 @@ createSwapChain physicalDevice device queues surface = do
             VK.clipped = True,
             VK.oldSwapchain = VK.NULL_HANDLE
           }
-  (swapChain, relSwapChain) <- VK.withSwapchainKHR device createInfo Nothing $ resourceRN "swapchain"
+  swapChain <- VK.withSwapchainKHR device createInfo Nothing $ resourceMN "swapchain"
+  swapChain' <- getResource swapChain
 
-  (_, images) <- VK.getSwapchainImagesKHR device swapChain
-  (imageViews, relImageViews) <- fmap V.unzip $ iforM images $ \index image -> do
-    let imageViewCreateInfo =
-          (zero :: VK.ImageViewCreateInfo '[])
-            { VK.image = image,
-              VK.viewType = VK.IMAGE_VIEW_TYPE_2D,
-              VK.format = format,
-              VK.components =
-                (zero :: VK.ComponentMapping)
-                  { VK.r = VK.COMPONENT_SWIZZLE_IDENTITY,
-                    VK.g = VK.COMPONENT_SWIZZLE_IDENTITY,
-                    VK.b = VK.COMPONENT_SWIZZLE_IDENTITY,
-                    VK.a = VK.COMPONENT_SWIZZLE_IDENTITY
-                  },
-              VK.subresourceRange =
-                (zero :: VK.ImageSubresourceRange)
-                  { VK.aspectMask = VK.IMAGE_ASPECT_COLOR_BIT,
-                    VK.baseMipLevel = 0,
-                    VK.levelCount = 1,
-                    VK.baseArrayLayer = 0,
-                    VK.layerCount = 1
-                  }
-            }
-    VK.withImageView device imageViewCreateInfo Nothing $ resourceRN ("ImageView " ++ show index)
-  let rel = do
-        V.sequence_ $ V.reverse relImageViews
-        relSwapChain
-  return (swapChain, createInfo, images, imageViews, rel)
+  (_, images) <- VK.getSwapchainImagesKHR device swapChain'
+  let prepareWithImageView = fmap $ \image ->
+                let imageViewCreateInfo =
+                      (zero :: VK.ImageViewCreateInfo '[])
+                        { VK.image = image,
+                          VK.viewType = VK.IMAGE_VIEW_TYPE_2D,
+                          VK.format = format,
+                          VK.components =
+                            (zero :: VK.ComponentMapping)
+                              { VK.r = VK.COMPONENT_SWIZZLE_IDENTITY,
+                                VK.g = VK.COMPONENT_SWIZZLE_IDENTITY,
+                                VK.b = VK.COMPONENT_SWIZZLE_IDENTITY,
+                                VK.a = VK.COMPONENT_SWIZZLE_IDENTITY
+                              },
+                          VK.subresourceRange =
+                            (zero :: VK.ImageSubresourceRange)
+                              { VK.aspectMask = VK.IMAGE_ASPECT_COLOR_BIT,
+                                VK.baseMipLevel = 0,
+                                VK.levelCount = 1,
+                                VK.baseArrayLayer = 0,
+                                VK.layerCount = 1
+                              }
+                        }
+                in VK.withImageView device imageViewCreateInfo Nothing
+  imageViews <- resourceMN' "ImageView" $ prepareWithImageView images
+  return (swapChain, createInfo, imageViews)
 
 createDeviceQueueCreateInfo :: Int -> VK.DeviceQueueCreateInfo '[]
 createDeviceQueueCreateInfo queueFamilyIndex =

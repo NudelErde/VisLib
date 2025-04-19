@@ -9,8 +9,8 @@
 {-# HLINT ignore "Use newtype instead of data" #-}
 {-# LANGUAGE RecordWildCards #-}
 module VisLib.Loader.GLTF where
-import Data.ByteString.Lazy (ByteString)
-import qualified Data.ByteString.Lazy as BS
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 import Control.Monad.Error.Class
 import Control.Monad (guard, forM_, forM, join)
 import Control.Applicative (Alternative)
@@ -25,7 +25,7 @@ import Data.List
 import Control.Monad.IO.Class
 import Data.Aeson hiding ((<?>))
 import Data.Maybe
-import qualified Data.ByteString.Lazy.Char8 as BSC
+import qualified Data.ByteString.Char8 as BSC
 import qualified Data.Map as M
 import Data.Traversable.WithIndex
 
@@ -133,7 +133,7 @@ data GLTFAccessor = GLTFAccessor {
   normalized :: Maybe Bool,
   max :: Maybe [Float],
   min :: Maybe [Float]
-}
+} deriving (Eq)
 
 instance FromJSON GLTFAccessor where
   parseJSON (Object v) = GLTFAccessor
@@ -258,11 +258,10 @@ glbParser = do
 
   return GLB{chunks = chunks'}
 
-loadGLTF :: (MonadIO m, Monad m, Alternative m) => GLB -> m GLTF
+loadGLTF :: (MonadIO m, Monad m) => GLB -> m GLTF
 loadGLTF GLB{chunks=chunks} = do
   let Just jsonChunk = find ((=="JSON") . chunkType) chunks
-  liftIO $ putStrLn $ "JSON Chunk: " ++ show jsonChunk
-  case eitherDecode (chunkData jsonChunk) of
+  case eitherDecodeStrict (chunkData jsonChunk) of
     Right x -> return x
     Left err -> error $ "Error parsing JSON chunk: " ++ show err
 
@@ -292,10 +291,19 @@ getBuffersForNode gltf@GLTF{bufferViews=bufferViews, nodes=nodes, meshes=meshes,
       buffer bufferView'
   forM buffers $ getDataOfBuffer gltf glbBuffers
 
-getAttributesForNode :: GLTF -> [ByteString] -> Int -> [(Int, [(String, Int)])]
-getAttributesForNode _gltf@GLTF{nodes=nodes, meshes=meshes} _glbBuffers nodeIndex = fromMaybe [] $ do
+getAttributesForNode :: GLTF -> Int -> [(Int, [(String, Int)])]
+getAttributesForNode _gltf@GLTF{nodes=nodes, meshes=meshes} nodeIndex = fromMaybe [] $ do
   node <- nodes !? nodeIndex
   meshIndex <- mesh node
+  mesh <- meshes !? meshIndex
+  iforM (primitives mesh) $ \i prim -> do
+    let attributeNames = attributes prim
+    let attributeNames' = maybe [] (\i -> [("INDICES",i)]) (indices prim) ++ attributeNames
+    return (i, attributeNames')
+
+
+getAttributesForMesh :: GLTF -> Int -> [(Int, [(String, Int)])]
+getAttributesForMesh _gltf@GLTF{meshes=meshes} meshIndex = fromMaybe [] $ do
   mesh <- meshes !? meshIndex
   iforM (primitives mesh) $ \i prim -> do
     let attributeNames = attributes prim
