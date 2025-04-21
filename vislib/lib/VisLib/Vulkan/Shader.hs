@@ -31,6 +31,12 @@ import qualified Vulkan.CStruct.Extends as VK
 import Data.Bits
 import Control.Monad
 
+data ShaderPushConstantDescription = ShaderPushConstantDescription
+  {_shaderPushConstantName :: String,
+    _shaderPushConstantSize :: Int,
+    _shaderPushConstantOffset :: Int
+  } deriving (Show, Eq, Lift)
+
 data ShaderLocationInformation = ShaderLocationInformation
   { _shaderLocationName :: Maybe String,
     _shaderLocationIndex :: Int,
@@ -54,14 +60,16 @@ data ShaderDescription = ShaderDescription
     _shaderType :: VK.ShaderStageFlags,
     _shaderNameResolve :: String -> Maybe ShaderLocationInformation,
     _shaderPushConstants :: [VK.PushConstantRange],
-    _shaderMainFunction :: Maybe ByteString
+    _shaderMainFunction :: Maybe ByteString,
+    _shaderPushConstantMap :: [ShaderPushConstantDescription]
   }
 
 data ShaderRepresentation = ShaderRepresentation
   { _shaderRepModule :: VK.ShaderModule,
     _shaderRepStage :: VK.SomeStruct VK.PipelineShaderStageCreateInfo,
     _shaderRepNameResolve :: String -> Maybe ShaderLocationInformation,
-    _shaderRepPushConstants :: [VK.PushConstantRange]
+    _shaderRepPushConstants :: [VK.PushConstantRange],
+    _shaderRepPushConstantMap :: [ShaderPushConstantDescription]
   }
 
 instance Show ShaderRepresentation where
@@ -88,6 +96,7 @@ $(makeLenses ''ShaderDescription)
 $(makeLenses ''ShaderRepresentation)
 $(makeLenses ''ShaderInfo)
 $(makeLenses ''ShaderLocationInformation)
+$(makeLenses ''ShaderPushConstantDescription)
 
 compileShaderRepresentation :: (MonadIO io) => VK.Device -> ShaderDescription -> AppMonad io d r ShaderRepresentation
 compileShaderRepresentation device ShaderDescription {..} = do
@@ -103,7 +112,8 @@ compileShaderRepresentation device ShaderDescription {..} = do
       { _shaderRepModule = shaderModule,
         _shaderRepStage = VK.SomeStruct shaderStageCreateInfo,
         _shaderRepNameResolve = _shaderNameResolve,
-        _shaderRepPushConstants = _shaderPushConstants
+        _shaderRepPushConstants = _shaderPushConstants,
+        _shaderRepPushConstantMap = _shaderPushConstantMap
       }
 
 createShaderInfoFromGLTF :: [ShaderRepresentation] -> GLTF -> Int -> Int -> ShaderInfo

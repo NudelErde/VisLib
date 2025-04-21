@@ -22,7 +22,7 @@ module Main where
 -- import Vulkan.Utils.ShaderQQ.GLSL.Shaderc
 
 import Control.Exception
-import Control.Lens
+import Control.Lens hiding (uncons)
 import Control.Monad
 import Control.Monad.Cont
 import Control.Monad.IO.Class
@@ -30,16 +30,20 @@ import Control.Monad.Reader
 import Control.Monad.Trans
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-import Data.Maybe (fromJust)
+import Data.List.Extra
+import Data.Maybe
 import Data.Tuple.Extra (uncurry3)
 import Data.Vector (Vector)
 import qualified Data.Vector as V
 import Foreign hiding (void)
+import Linear.V2
+import Linear.V4
+import Objects
 import qualified SDL
 import qualified SDL.Video.Vulkan as SDL
-import Text.Megaparsec
+import Text.Megaparsec hiding (try)
 import VisLib.App
-import VisLib.Loader.GLTF
+import VisLib.Loader.GLTF hiding (max, min)
 import VisLib.Vulkan.Memory
 import VisLib.Vulkan.Model
 import VisLib.Vulkan.Shader
@@ -51,8 +55,16 @@ import Vulkan.CStruct.Extends (pattern (:&), pattern (::&))
 import qualified Vulkan.CStruct.Extends as VK
 import qualified Vulkan.Exception as VK
 import Vulkan.Zero
-import Data.Maybe
-import Objects
+import Linear.Matrix
+import Data.Time.Clock.POSIX (getPOSIXTime)
+
+vulkanWindow :: SDL.WindowConfig
+vulkanWindow =
+  SDL.defaultWindow
+    { SDL.windowGraphicsContext = SDL.VulkanContext,
+      SDL.windowResizable = True,
+      SDL.windowInitialSize = SDL.V2 600 600
+    }
 
 interleave :: [[a]] -> [a]
 interleave = ((++) <$> fst <*> (interleave . snd)) . unzip . mapMaybe uncons
@@ -62,48 +74,60 @@ main = runApp ?? () $ do
   vulkanData <- initialize
   object <- withData vulkanData load
   withData ([object], vulkanData) $ callCC $ \exit -> do
-    renderAction <- cycle <$> forM [0..2] createFlightAction
+    renderAction <- cycle <$> forM [0 .. 2] createFlightAction
     let eventsAction = repeat $ handleSDLEvents [checkExit exit]
     sequence_ $ interleave [eventsAction, renderAction]
-  VK.deviceWaitIdle (vulkanData^.vdDevice.deviceHandle)
+  VK.deviceWaitIdle (vulkanData ^. vdDevice . deviceHandle)
 
   return ()
 
 createFlightAction :: (MonadIO io) => Int -> AppMonad io ([Object], VulkanData) r (AppMonad io ([Object], VulkanData) r2 ())
 createFlightAction i = do
   (_objs, vd) <- ask
-  let commandBufferAllocateInfo
-        = (zero :: VK.CommandBufferAllocateInfo)
-            { VK.commandPool = vd^.vdDevice. deviceQueue . graphicsCommandPool,
-              VK.level = VK.COMMAND_BUFFER_LEVEL_PRIMARY,
-              VK.commandBufferCount = 1
-            }
-  commandBuffer <- V.head <$> VK.withCommandBuffers (vd^.vdDevice.deviceHandle) commandBufferAllocateInfo (resourceN $ "command buffer " ++ show i)
+  let commandBufferAllocateInfo =
+        (zero :: VK.CommandBufferAllocateInfo)
+          { VK.commandPool = vd ^. vdDevice . deviceQueue . graphicsCommandPool,
+            VK.level = VK.COMMAND_BUFFER_LEVEL_PRIMARY,
+            VK.commandBufferCount = 1
+          }
+  commandBuffer <- V.head <$> VK.withCommandBuffers (vd ^. vdDevice . deviceHandle) commandBufferAllocateInfo (resourceN $ "command buffer " ++ show i)
   let fenceInfo = (zero :: VK.FenceCreateInfo '[]) {VK.flags = VK.FENCE_CREATE_SIGNALED_BIT}
-  fence <- VK.withFence (vd^.vdDevice. deviceHandle) fenceInfo Nothing $ resourceN $ "fence " ++ show i
-  imageAvailableSemaphore <- VK.withSemaphore (vd^.vdDevice. deviceHandle) (zero :: VK.SemaphoreCreateInfo '[]) Nothing $ resourceN $ "image available semaphore " ++ show i
-  renderFinishedSemaphore <- VK.withSemaphore (vd^.vdDevice. deviceHandle) (zero :: VK.SemaphoreCreateInfo '[]) Nothing $ resourceN $ "render finished semaphore " ++ show i
-  return $ do
+  fence <- VK.withFence (vd ^. vdDevice . deviceHandle) fenceInfo Nothing $ resourceN $ "fence " ++ show i
+  imageAvailableSemaphore <- VK.withSemaphore (vd ^. vdDevice . deviceHandle) (zero :: VK.SemaphoreCreateInfo '[]) Nothing $ resourceN $ "image available semaphore " ++ show i
+  renderFinishedSemaphore <- VK.withSemaphore (vd ^. vdDevice . deviceHandle) (zero :: VK.SemaphoreCreateInfo '[]) Nothing $ resourceN $ "render finished semaphore " ++ show i
+  return $ callCC $ \skip -> do
     (objs, vd) <- ask
-    void $ VK.waitForFences (vd^.vdDevice. deviceHandle) [fence] True maxBound
-    imageIndex <- acquireNextImage (vd^.vdDevice) (vd^.vdSwapChain) imageAvailableSemaphore
-    VK.resetFences (vd^.vdDevice. deviceHandle) [fence]
+    void $ VK.waitForFences (vd ^. vdDevice . deviceHandle) [fence] True maxBound
+    imageIndex <- checkRecreateSwapChain skip $ acquireNextImage (vd ^. vdDevice) (vd ^. vdSwapChain) imageAvailableSemaphore
+    VK.resetFences (vd ^. vdDevice . deviceHandle) [fence]
     VK.resetCommandBuffer commandBuffer zero
-    framebuffers <- getResource (vd^. vdFramebuffer . framebufferHandle)
+    framebuffers <- getResource (vd ^. vdFramebuffer . framebufferHandle)
     let framebuffer = framebuffers ^?! ix (fromIntegral imageIndex)
-    let renderPass = vd^.vdRenderPass . renderPassHandle
-    let VK.SwapchainCreateInfoKHR{VK.imageExtent=extent} = vd^.vdSwapChain . swapChainInfo
+    let renderPass = vd ^. vdRenderPass . renderPassHandle
+    let VK.SwapchainCreateInfoKHR {VK.imageExtent = extent} = vd ^. vdSwapChain . swapChainInfo
     record objs commandBuffer renderPass framebuffer (getViewPortScissor extent)
-    submit (vd^.vdDevice) commandBuffer imageAvailableSemaphore renderFinishedSemaphore fence
-    present (vd^.vdDevice) (vd^.vdSwapChain) renderFinishedSemaphore imageIndex
+    submit (vd ^. vdDevice) commandBuffer imageAvailableSemaphore renderFinishedSemaphore fence
+    checkRecreateSwapChain skip $ present (vd ^. vdDevice) (vd ^. vdSwapChain) renderFinishedSemaphore imageIndex
     return ()
 
-handleSDLEvents :: MonadIO io => [SDL.Event -> AppMonad io d r ()] -> AppMonad io d r ()
+checkRecreateSwapChain :: (MonadIO io) => (() -> AppMonad io ([Object], VulkanData) r ()) -> IO a -> AppMonad io ([Object], VulkanData) r a
+checkRecreateSwapChain skip action = do
+  (_, vd) <- ask
+  res <- liftIO $ try action
+  case res of
+    Left (VK.VulkanException VK.ERROR_OUT_OF_DATE_KHR) -> do
+      withData vd recreateSwapChain
+      skip ()
+      error "Could not escape from swapchain recreation"
+    Right x -> return x
+    Left x -> liftIO $ throwIO x
+
+handleSDLEvents :: (MonadIO io) => [SDL.Event -> AppMonad io d r ()] -> AppMonad io d r ()
 handleSDLEvents handlers = do
   events <- liftIO SDL.pollEvents
   sequence_ (handlers <*> events)
 
-checkExit :: MonadIO io => (() -> AppMonad io d r ()) -> SDL.Event -> AppMonad io d r ()
+checkExit :: (MonadIO io) => (() -> AppMonad io d r ()) -> SDL.Event -> AppMonad io d r ()
 checkExit exit event = do
   case SDL.eventPayload event of
     SDL.QuitEvent -> exit ()
@@ -113,6 +137,15 @@ recordObject :: (MonadIO io) => Object -> VK.CommandBuffer -> io ()
 recordObject obj commandBuffer = do
   cmdBindPipeline commandBuffer (obj ^. objectPipeline)
   cmdBindBuffers commandBuffer (obj ^. objectShaderInfo) (obj ^.. objectBuffers . traverse . bufferHandle)
+  let pushConstants = map (\p -> (p^.shaderPushConstantName,p)) $ obj ^.. objectShaderInfo . shaderInfoModules . traverse . shaderRepPushConstantMap . traverse
+  let mvpLoc = lookup "model" pushConstants
+  when (isJust mvpLoc) $ do
+    let Just mvpLoc' = mvpLoc
+    currTime <- liftIO (round . (* 1000) <$> getPOSIXTime)
+    let currTime' = currTime `mod` 1000
+    let currTime'' = fromIntegral currTime' / 1000
+    let mvp :: M44 Float = identity !!* currTime'' & _w . _w .~ 1
+    cmdSetPushConstant commandBuffer (obj ^. objectPipeline) VK.SHADER_STAGE_VERTEX_BIT mvpLoc' mvp
   case obj ^. objectDrawInformation of
     Left indexBuffer -> do
       cmdBindIndexBuffer commandBuffer indexBuffer
@@ -149,7 +182,7 @@ load = do
   renderPass <- view vdRenderPass
   vertexShader' <- compileShaderRepresentation (device ^. deviceHandle) vertexShader
   fragmentShader' <- compileShaderRepresentation (device ^. deviceHandle) fragmentShader
-  let filePath = "../assets/Box.glb"
+  let filePath = "assets/Box.glb"
   fileContent <- liftIO $ BS.readFile filePath
 
   (gltf, chunks) <- case runParser glbParser filePath fileContent of
@@ -245,8 +278,12 @@ vertexShader =
 
     layout(location = 0) in vec3 POSITION;
 
+    layout(push_constant) uniform PushConstant {
+        mat4 model;
+    } pc;
+
     void main() {
-        gl_Position = vec4(POSITION, 1);
+        gl_Position = pc.model * vec4(POSITION, 1);
         fragColor = vec3(1, 0, 0);
     }
   |]
