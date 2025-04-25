@@ -1,41 +1,43 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveLift #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
-{-# LANGUAGE OverloadedLists #-}
 {-# OPTIONS_GHC -Wno-ambiguous-fields #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
 module VisLib.Vulkan.Shader where
 
 import Control.Lens
+import Control.Monad
 import Control.Monad.IO.Class
+import Data.Bits
 import Data.ByteString (ByteString)
 import Data.Function
 import Data.List
 import Data.Maybe
 import Data.Vector (Vector)
 import qualified Data.Vector as V
+import Debug.Trace
 import Language.Haskell.TH.Syntax (Lift (..))
 import VisLib.App
 import VisLib.Loader.GLTF
 import VisLib.Vulkan.Vulkan hiding (ShaderDescription)
 import qualified Vulkan as VK
-import Vulkan.Zero
 import qualified Vulkan.CStruct.Extends as VK
-import Data.Bits
-import Control.Monad
+import Vulkan.Zero
 
 data ShaderPushConstantDescription = ShaderPushConstantDescription
-  {_shaderPushConstantName :: String,
+  { _shaderPushConstantName :: String,
     _shaderPushConstantSize :: Int,
     _shaderPushConstantOffset :: Int
-  } deriving (Show, Eq, Lift)
+  }
+  deriving (Show, Eq, Lift)
 
 data ShaderLocationInformation = ShaderLocationInformation
   { _shaderLocationName :: Maybe String,
@@ -63,6 +65,22 @@ data ShaderDescription = ShaderDescription
     _shaderMainFunction :: Maybe ByteString,
     _shaderPushConstantMap :: [ShaderPushConstantDescription]
   }
+
+instance Show ShaderDescription where
+  show ShaderDescription {..} =
+    "ShaderDescription { _shaderName = "
+      ++ show _shaderName
+      ++ ", _shaderSource = [bytes]"
+      ++ ", _shaderType = "
+      ++ show _shaderType
+      ++ ", _shaderNameResolve = [function]"
+      ++ ", _shaderPushConstants = "
+      ++ show _shaderPushConstants
+      ++ ", _shaderMainFunction = "
+      ++ show _shaderMainFunction
+      ++ ", _shaderPushConstantMap = "
+      ++ show _shaderPushConstantMap
+      ++ " }"
 
 data ShaderRepresentation = ShaderRepresentation
   { _shaderRepModule :: VK.ShaderModule,
@@ -92,11 +110,17 @@ data ShaderInfo = ShaderInfo
   }
   deriving (Show)
 
+data PipelineConfiguration = PipelineConfiguration
+  { _pipelineCullMode :: VK.CullModeFlags,
+    _pipelineDepthTest :: Bool
+  }
+
 $(makeLenses ''ShaderDescription)
 $(makeLenses ''ShaderRepresentation)
 $(makeLenses ''ShaderInfo)
 $(makeLenses ''ShaderLocationInformation)
 $(makeLenses ''ShaderPushConstantDescription)
+$(makeLenses ''PipelineConfiguration)
 
 compileShaderRepresentation :: (MonadIO io) => VK.Device -> ShaderDescription -> AppMonad io d r ShaderRepresentation
 compileShaderRepresentation device ShaderDescription {..} = do
@@ -169,7 +193,6 @@ createShaderInfoFromGLTF shaderRepresentations gltf meshIndex primitiveIndex =
         5 -> VK.PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP
         6 -> VK.PRIMITIVE_TOPOLOGY_TRIANGLE_FAN
         n -> error $ "Unsupported primitive topology: " ++ show n
-
    in ShaderInfo
         { _shaderInfoModules = V.fromList shaderRepresentations,
           _shaderInfoVertexInputBindingDescription = V.fromList bindingDescriptions,
@@ -178,61 +201,95 @@ createShaderInfoFromGLTF shaderRepresentations gltf meshIndex primitiveIndex =
           _shaderInfoPrimitive = primitiveTopology
         }
 
-createPipelineFromShaderInfo :: (MonadIO io) => VK.Device -> ShaderInfo -> VK.RenderPass -> AppMonad io d r (VK.Pipeline, VK.PipelineLayout)
-createPipelineFromShaderInfo device si renderPass = do
-  let layoutInfo = (zero :: VK.PipelineLayoutCreateInfo) {
-    VK.pushConstantRanges = si ^. shaderInfoPushConstants
-  }
+createPipelineFromShaderInfo :: (MonadIO io) => VK.Device -> ShaderInfo -> PipelineConfiguration -> VK.RenderPass -> AppMonad io d r (VK.Pipeline, VK.PipelineLayout)
+createPipelineFromShaderInfo device si pipelineConfig renderPass = do
+  let layoutInfo =
+        (zero :: VK.PipelineLayoutCreateInfo)
+          { VK.pushConstantRanges = si ^. shaderInfoPushConstants
+          }
   layout <- VK.withPipelineLayout device layoutInfo Nothing $ resourceN "pipeline layout"
-  let pipelineCreateInfo = (zero :: VK.GraphicsPipelineCreateInfo '[]) {
-    VK.stages = V.fromList $ si ^.. shaderInfoModules . traverse . shaderRepStage,
-    VK.stageCount = fromIntegral $ V.length (si ^. shaderInfoModules),
-    VK.vertexInputState = Just $ VK.SomeStruct (zero :: VK.PipelineVertexInputStateCreateInfo '[])
-      { VK.vertexBindingDescriptions = V.fromList $ si ^.. shaderInfoVertexInputBindingDescription . traverse . _1,
-        VK.vertexAttributeDescriptions = si ^. shaderInfoVertexInputAttributeDescription
-      },
-    VK.inputAssemblyState = Just $ (zero :: VK.PipelineInputAssemblyStateCreateInfo)
-      { VK.topology = si ^. shaderInfoPrimitive,
-        VK.primitiveRestartEnable = False
-      },
-    VK.viewportState = Just $ VK.SomeStruct (zero :: VK.PipelineViewportStateCreateInfo '[])
-      { VK.viewportCount = 1,
-        VK.scissorCount = 1
-      },
-    VK.rasterizationState = Just $ VK.SomeStruct (zero :: VK.PipelineRasterizationStateCreateInfo '[])
-      { VK.depthClampEnable = False,
-        VK.rasterizerDiscardEnable = False,
-        VK.polygonMode = VK.POLYGON_MODE_FILL,
-        VK.lineWidth = 1.0,
-        VK.cullMode = VK.CULL_MODE_NONE,
-        VK.frontFace = VK.FRONT_FACE_COUNTER_CLOCKWISE,
-        VK.depthBiasEnable = False
-      },
-    VK.multisampleState = Just $ VK.SomeStruct (zero :: VK.PipelineMultisampleStateCreateInfo '[])
-      { VK.sampleShadingEnable = False,
-        VK.rasterizationSamples = VK.SAMPLE_COUNT_1_BIT
-      },
-    VK.colorBlendState = Just $ VK.SomeStruct (zero :: VK.PipelineColorBlendStateCreateInfo '[])
-      { VK.logicOpEnable = False,
-        VK.attachments = [ (zero :: VK.PipelineColorBlendAttachmentState)
-              { VK.blendEnable = False,
-                VK.colorWriteMask = VK.COLOR_COMPONENT_R_BIT .|. VK.COLOR_COMPONENT_G_BIT .|. VK.COLOR_COMPONENT_B_BIT .|. VK.COLOR_COMPONENT_A_BIT
-              }
-          ],
-        VK.attachmentCount = 1
-      },
-    VK.dynamicState = Just $ (zero :: VK.PipelineDynamicStateCreateInfo)
-      { VK.dynamicStates = [VK.DYNAMIC_STATE_VIEWPORT, VK.DYNAMIC_STATE_SCISSOR]
-      },
-    VK.layout = layout,
-    VK.renderPass = renderPass,
-    VK.subpass = 0
-  }
+  let pipelineCreateInfo =
+        (zero :: VK.GraphicsPipelineCreateInfo '[])
+          { VK.stages = V.fromList $ si ^.. shaderInfoModules . traverse . shaderRepStage,
+            VK.stageCount = fromIntegral $ V.length (si ^. shaderInfoModules),
+            VK.vertexInputState =
+              Just $
+                VK.SomeStruct
+                  (zero :: VK.PipelineVertexInputStateCreateInfo '[])
+                    { VK.vertexBindingDescriptions = V.fromList $ si ^.. shaderInfoVertexInputBindingDescription . traverse . _1,
+                      VK.vertexAttributeDescriptions = si ^. shaderInfoVertexInputAttributeDescription
+                    },
+            VK.inputAssemblyState =
+              Just $
+                (zero :: VK.PipelineInputAssemblyStateCreateInfo)
+                  { VK.topology = si ^. shaderInfoPrimitive,
+                    VK.primitiveRestartEnable = False
+                  },
+            VK.viewportState =
+              Just $
+                VK.SomeStruct
+                  (zero :: VK.PipelineViewportStateCreateInfo '[])
+                    { VK.viewportCount = 1,
+                      VK.scissorCount = 1
+                    },
+            VK.rasterizationState =
+              Just $
+                VK.SomeStruct
+                  (zero :: VK.PipelineRasterizationStateCreateInfo '[])
+                    { VK.depthClampEnable = False,
+                      VK.rasterizerDiscardEnable = False,
+                      VK.polygonMode = VK.POLYGON_MODE_FILL,
+                      VK.lineWidth = 1.0,
+                      VK.cullMode = pipelineConfig ^. pipelineCullMode,
+                      VK.frontFace = VK.FRONT_FACE_COUNTER_CLOCKWISE,
+                      VK.depthBiasEnable = False
+                    },
+            VK.multisampleState =
+              Just $
+                VK.SomeStruct
+                  (zero :: VK.PipelineMultisampleStateCreateInfo '[])
+                    { VK.sampleShadingEnable = False,
+                      VK.rasterizationSamples = VK.SAMPLE_COUNT_1_BIT
+                    },
+            VK.colorBlendState =
+              Just $
+                VK.SomeStruct
+                  (zero :: VK.PipelineColorBlendStateCreateInfo '[])
+                    { VK.logicOpEnable = False,
+                      VK.attachments =
+                        [ (zero :: VK.PipelineColorBlendAttachmentState)
+                            { VK.blendEnable = False,
+                              VK.colorWriteMask = VK.COLOR_COMPONENT_R_BIT .|. VK.COLOR_COMPONENT_G_BIT .|. VK.COLOR_COMPONENT_B_BIT .|. VK.COLOR_COMPONENT_A_BIT
+                            }
+                        ],
+                      VK.attachmentCount = 1
+                    },
+            VK.dynamicState =
+              Just $
+                (zero :: VK.PipelineDynamicStateCreateInfo)
+                  { VK.dynamicStates = [VK.DYNAMIC_STATE_VIEWPORT, VK.DYNAMIC_STATE_SCISSOR]
+                  },
+            VK.depthStencilState =
+              if pipelineConfig ^. pipelineDepthTest
+                then
+                  Just
+                    (zero :: VK.PipelineDepthStencilStateCreateInfo)
+                      { VK.depthTestEnable = True,
+                        VK.depthWriteEnable = True,
+                        VK.depthCompareOp = VK.COMPARE_OP_LESS,
+                        VK.depthBoundsTestEnable = False,
+                        VK.stencilTestEnable = False
+                      }
+                else Nothing,
+            VK.layout = layout,
+            VK.renderPass = renderPass,
+            VK.subpass = 0
+          }
   (_, pipelines) <- VK.withGraphicsPipelines device VK.NULL_HANDLE [VK.SomeStruct pipelineCreateInfo] Nothing $ resourceN "graphics pipeline"
 
   return (V.head pipelines, layout)
 
 cmdBindBuffers :: (MonadIO io) => VK.CommandBuffer -> ShaderInfo -> [VK.Buffer] -> io ()
 cmdBindBuffers commandBuffer shaderInfo buffers = do
-  forM_ (shaderInfo ^.. shaderInfoVertexInputBindingDescription . traverse) $ \(VK.VertexInputBindingDescription{VK.binding = binding}, bufferViewIndex) -> do
+  forM_ (shaderInfo ^.. shaderInfoVertexInputBindingDescription . traverse) $ \(VK.VertexInputBindingDescription {VK.binding = binding}, bufferViewIndex) -> do
     VK.cmdBindVertexBuffers commandBuffer (fromIntegral binding) [buffers !! fromJust bufferViewIndex] [0]

@@ -139,10 +139,10 @@ resourceMN' :: (Show i, TraversableWithIndex i t, MonadIO io) => String -> t ((I
 resourceMN' s t = lift $ ContT $ \c -> do
   let t' = fmap (\x -> x (,)) t
   let acquire = iforM t' $ \i (acq, rel) -> do
-        print $ "create " ++ s ++ " (" ++ show i ++ ", mutable)"
+        putStrLn $ "create " ++ s ++ " (" ++ show i ++ ", mutable)"
         a <- acq
         let release = do
-              print $ "destroy " ++ s ++ " (" ++ show i ++ ", mutable)"
+              putStrLn $ "destroy " ++ s ++ " (" ++ show i ++ ", mutable)"
               rel a
         return (a, release)
   let release = mapM_ $ \(_, rel) -> do
@@ -190,10 +190,10 @@ updateResourceMutableN' s (ResourceMutable ref) t = do
   released <- liftIO $ newIORef False
   let t' = fmap (\x -> x (,)) t
   let acquire = iforM t' $ \i (acq, rel) -> do
-        print $ "create " ++ s ++ " (" ++ show i ++ ", mutable)"
+        putStrLn $ "create " ++ s ++ " (" ++ show i ++ ", mutable)"
         a <- acq
         let release = do
-              print $ "destroy " ++ s ++ " (" ++ show i ++ ", mutable)"
+              putStrLn $ "destroy " ++ s ++ " (" ++ show i ++ ", mutable)"
               rel a
         return (a, release)
   let release = mapM_ $ \(_, rel) -> do
@@ -206,3 +206,10 @@ updateResourceMutableN' s (ResourceMutable ref) t = do
           writeIORef released True
   liftIO $ writeIORef ref (fmap fst a, release')
   return $ fmap fst a
+
+withResource :: MonadIO io => (a -> AppMonad io d r v) -> AppMonad io d r a -> (a -> AppMonad io d r b) -> AppMonad io d r v
+withResource app acq rel = do
+  a <- acq
+  v <- app a
+  _ <- rel a
+  return v

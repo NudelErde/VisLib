@@ -64,7 +64,7 @@ executable exampleVulkan
     -- other-extensions:
 
     -- Other library packages from which modules are imported.
-    build-depends:    base ^>=4.19.1.0, vislib, sdl2, mtl, vulkan, vector, bytestring, extra, indexed-traversable, vulkan-utils, lens, megaparsec, linear, time
+    build-depends:    base ^>=4.19.1.0, vislib, sdl2, mtl, vulkan, vector, bytestring, extra, indexed-traversable, vulkan-utils, lens, megaparsec, linear, time, StateVar
 
     -- Directories containing source files.
     hs-source-dirs:   app

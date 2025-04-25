@@ -2,6 +2,7 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE QuasiQuotes #-}
@@ -41,6 +42,8 @@ import qualified Vulkan as VK
 import Vulkan.CStruct.Extends (pattern (:&), pattern (::&))
 import qualified Vulkan.CStruct.Extends as VK
 import Vulkan.Zero
+import qualified Vulkan as Vk
+import qualified Data.Maybe as V
 
 data Queues = Queues
   { _graphicsQueue :: VK.Queue,
@@ -49,25 +52,26 @@ data Queues = Queues
     _presentQueue :: VK.Queue,
     _presentCommandPool :: VK.CommandPool,
     _presentFamilyIndex :: Int
-  } deriving (Show, Eq)
+  }
+  deriving (Show, Eq)
 
 $(makeLenses ''Queues)
 
-data ShaderDescription = ShaderDescription {
-  _fragmentShaderSource :: ByteString,
-  _vertexShaderSource :: ByteString,
-  _vertexInputBindingDescription :: Vector VK.VertexInputBindingDescription,
-  _vertexInputAttributeDescription :: Vector VK.VertexInputAttributeDescription,
-  _pushConstants :: Vector VK.PushConstantRange
-}
+data ShaderDescription = ShaderDescription
+  { _fragmentShaderSource :: ByteString,
+    _vertexShaderSource :: ByteString,
+    _vertexInputBindingDescription :: Vector VK.VertexInputBindingDescription,
+    _vertexInputAttributeDescription :: Vector VK.VertexInputAttributeDescription,
+    _pushConstants :: Vector VK.PushConstantRange
+  }
 
-data ShaderDescriptionCompiled = ShaderDescriptionCompiled {
-  _fragmentShaderModule :: VK.ShaderModule,
-  _vertexShaderModule :: VK.ShaderModule,
-  _vertexInputBindingDescription' :: Vector VK.VertexInputBindingDescription,
-  _vertexInputAttributeDescription' :: Vector VK.VertexInputAttributeDescription,
-  _pushConstants' :: Vector VK.PushConstantRange
-}
+data ShaderDescriptionCompiled = ShaderDescriptionCompiled
+  { _fragmentShaderModule :: VK.ShaderModule,
+    _vertexShaderModule :: VK.ShaderModule,
+    _vertexInputBindingDescription' :: Vector VK.VertexInputBindingDescription,
+    _vertexInputAttributeDescription' :: Vector VK.VertexInputAttributeDescription,
+    _pushConstants' :: Vector VK.PushConstantRange
+  }
 
 $(makeLenses ''ShaderDescription)
 $(makeLenses ''ShaderDescriptionCompiled)
@@ -97,18 +101,19 @@ createCommandBuffers device commandPool count = do
           }
   VK.withCommandBuffers device commandBufferAllocateInfo $ resourceN "command buffer"
 
-createFramebuffers :: (MonadIO io) => VK.Device -> VK.RenderPass -> Vector VK.ImageView -> VK.SwapchainCreateInfoKHR '[] -> AppMonad io d r (ResourceMutable (Vector VK.Framebuffer))
-createFramebuffers device renderPass imageViews VK.SwapchainCreateInfoKHR {..} = do
+createFramebuffers :: (MonadIO io) => VK.Device -> VK.RenderPass -> Vector VK.ImageView -> VK.SwapchainCreateInfoKHR '[] -> Maybe VK.ImageView -> AppMonad io d r (ResourceMutable (Vector VK.Framebuffer))
+createFramebuffers device renderPass imageViews VK.SwapchainCreateInfoKHR {..} depthImage = do
   let VK.Extent2D width height = imageExtent
-  let prepareWithFrameBuffer = fmap $ \imageView -> 
-        let framebufferCreateInfo = (zero :: VK.FramebufferCreateInfo '[])
-              { VK.renderPass = renderPass,
-                VK.attachments = V.fromList [imageView],
-                VK.width = width,
-                VK.height = height,
-                VK.layers = 1
-              }
-        in VK.withFramebuffer device framebufferCreateInfo Nothing
+  let prepareWithFrameBuffer = fmap $ \imageView ->
+        let framebufferCreateInfo =
+              (zero :: VK.FramebufferCreateInfo '[])
+                { VK.renderPass = renderPass,
+                  VK.attachments = V.fromList (imageView : maybeToList depthImage),
+                  VK.width = width,
+                  VK.height = height,
+                  VK.layers = 1
+                }
+         in VK.withFramebuffer device framebufferCreateInfo Nothing
   resourceMN' "framebuffer" $ prepareWithFrameBuffer imageViews
 
 getViewPortScissor :: VK.Extent2D -> (VK.Viewport, VK.Rect2D)
@@ -133,141 +138,98 @@ getViewPortScissor extent@(VK.Extent2D width height) = (viewport, scissor)
           VK.extent = extent
         }
 
-createRenderPass :: (MonadIO io) => VK.Device -> VK.SwapchainCreateInfoKHR '[] -> AppMonad io d r VK.RenderPass
-createRenderPass device VK.SwapchainCreateInfoKHR {..} = do
+createRenderPass :: (MonadIO io) => VK.Device -> VK.SwapchainCreateInfoKHR '[] -> Maybe VK.Format -> AppMonad io d r VK.RenderPass
+createRenderPass device VK.SwapchainCreateInfoKHR {..} Nothing = do
   let renderPassCreateInfo =
         (zero :: VK.RenderPassCreateInfo '[])
           { VK.attachments =
-              V.fromList
-                [ (zero :: VK.AttachmentDescription)
-                    { VK.format = imageFormat,
-                      VK.samples = VK.SAMPLE_COUNT_1_BIT,
-                      VK.loadOp = VK.ATTACHMENT_LOAD_OP_CLEAR,
-                      VK.storeOp = VK.ATTACHMENT_STORE_OP_STORE,
-                      VK.stencilLoadOp = VK.ATTACHMENT_LOAD_OP_DONT_CARE,
-                      VK.stencilStoreOp = VK.ATTACHMENT_STORE_OP_DONT_CARE,
-                      VK.initialLayout = VK.IMAGE_LAYOUT_UNDEFINED,
-                      VK.finalLayout = VK.IMAGE_LAYOUT_PRESENT_SRC_KHR
-                    }
-                ],
+              [ VK.AttachmentDescription
+                  { VK.flags = zero,
+                    VK.format = imageFormat,
+                    VK.samples = VK.SAMPLE_COUNT_1_BIT,
+                    VK.loadOp = VK.ATTACHMENT_LOAD_OP_CLEAR,
+                    VK.storeOp = VK.ATTACHMENT_STORE_OP_STORE,
+                    VK.stencilLoadOp = VK.ATTACHMENT_LOAD_OP_DONT_CARE,
+                    VK.stencilStoreOp = VK.ATTACHMENT_STORE_OP_DONT_CARE,
+                    VK.initialLayout = VK.IMAGE_LAYOUT_UNDEFINED,
+                    VK.finalLayout = VK.IMAGE_LAYOUT_PRESENT_SRC_KHR
+                  }
+              ],
             VK.subpasses =
-              V.fromList
-                [ (zero :: VK.SubpassDescription)
-                    { VK.pipelineBindPoint = VK.PIPELINE_BIND_POINT_GRAPHICS,
-                      VK.colorAttachments = V.fromList [VK.AttachmentReference 0 VK.IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL]
-                    }
-                ],
+              [ VK.SubpassDescription
+                  { VK.flags = zero,
+                    VK.pipelineBindPoint = VK.PIPELINE_BIND_POINT_GRAPHICS,
+                    VK.inputAttachments = [],
+                    VK.colorAttachments = V.fromList [VK.AttachmentReference 0 VK.IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL],
+                    VK.resolveAttachments = [],
+                    VK.depthStencilAttachment = Nothing,
+                    VK.preserveAttachments = []
+                  }
+              ],
             VK.dependencies =
-              V.fromList
-                [ VK.SubpassDependency
-                    { VK.srcSubpass = VK.SUBPASS_EXTERNAL,
-                      VK.dstSubpass = 0,
-                      VK.srcStageMask = VK.PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                      VK.dstStageMask = VK.PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                      VK.srcAccessMask = zero,
-                      VK.dstAccessMask = VK.ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-                      VK.dependencyFlags = zero
-                    }
-                ]
+              [ VK.SubpassDependency
+                  { VK.srcSubpass = VK.SUBPASS_EXTERNAL,
+                    VK.dstSubpass = 0,
+                    VK.srcStageMask = VK.PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                    VK.dstStageMask = VK.PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                    VK.srcAccessMask = zero,
+                    VK.dstAccessMask = VK.ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                    VK.dependencyFlags = zero
+                  }
+              ]
           }
   VK.withRenderPass device renderPassCreateInfo Nothing $ resourceN "render pass"
-
--- createPipeline :: (MonadIO io) => VK.Device -> ShaderDescriptionCompiled -> VK.RenderPass -> AppMonad io d r (VK.Pipeline, VK.PipelineLayout)
--- createPipeline device ShaderDescriptionCompiled{..} renderPass = do
---   liftIO $ print _pushConstants'
---   let layoutInfo = (zero :: VK.PipelineLayoutCreateInfo) {
---     VK.pushConstantRanges = _pushConstants'
---   }
---   layout <- VK.withPipelineLayout device layoutInfo Nothing $ resourceN "pipeline layout"
---   let pipelineCreateInfo =
---         (zero :: VK.GraphicsPipelineCreateInfo '[])
---           { VK.stageCount = 2,
---             VK.stages =
---               V.fromList [(_vertexShaderModule, VK.SHADER_STAGE_VERTEX_BIT), (_fragmentShaderModule, VK.SHADER_STAGE_FRAGMENT_BIT)] <&> \(shaderModule, stage) -> do
---                 VK.SomeStruct
---                   (zero :: VK.PipelineShaderStageCreateInfo '[])
---                     { VK.stage = stage,
---                       VK.module' = shaderModule,
---                       VK.name = "main"
---                     },
---             VK.vertexInputState =
---               Just $
---                 VK.SomeStruct
---                   (zero :: VK.PipelineVertexInputStateCreateInfo '[])
---                     { VK.vertexBindingDescriptions = _vertexInputBindingDescription',
---                       VK.vertexAttributeDescriptions = _vertexInputAttributeDescription'
---                     },
---             VK.inputAssemblyState =
---               Just
---                 (zero :: VK.PipelineInputAssemblyStateCreateInfo)
---                   { VK.topology = VK.PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
---                     VK.primitiveRestartEnable = False
---                   },
---             VK.viewportState =
---               Just $
---                 VK.SomeStruct
---                   (zero :: VK.PipelineViewportStateCreateInfo '[])
---                     { VK.viewportCount = 1,
---                       VK.scissorCount = 1
---                     },
---             VK.rasterizationState =
---               Just $
---                 VK.SomeStruct
---                   (zero :: VK.PipelineRasterizationStateCreateInfo '[])
---                     { VK.depthClampEnable = False,
---                       VK.rasterizerDiscardEnable = False,
---                       VK.polygonMode = VK.POLYGON_MODE_FILL,
---                       VK.lineWidth = 1.0,
---                       VK.cullMode = VK.CULL_MODE_NONE,
---                       VK.frontFace = VK.FRONT_FACE_COUNTER_CLOCKWISE,
---                       VK.depthBiasEnable = False
---                     },
---             VK.multisampleState =
---               Just $
---                 VK.SomeStruct
---                   (zero :: VK.PipelineMultisampleStateCreateInfo '[])
---                     { VK.sampleShadingEnable = False,
---                       VK.rasterizationSamples = VK.SAMPLE_COUNT_1_BIT
---                     },
---             VK.colorBlendState =
---               Just $
---                 VK.SomeStruct
---                   (zero :: VK.PipelineColorBlendStateCreateInfo '[])
---                     { VK.logicOpEnable = False,
---                       VK.attachments =
---                         V.fromList
---                           [ (zero :: VK.PipelineColorBlendAttachmentState)
---                               { VK.blendEnable = False,
---                                 VK.colorWriteMask = VK.COLOR_COMPONENT_R_BIT .|. VK.COLOR_COMPONENT_G_BIT .|. VK.COLOR_COMPONENT_B_BIT .|. VK.COLOR_COMPONENT_A_BIT
---                               }
---                           ],
---                       VK.attachmentCount = 1
---                     },
---             VK.dynamicState =
---               Just
---                 (zero :: VK.PipelineDynamicStateCreateInfo)
---                   { VK.dynamicStates = V.fromList [VK.DYNAMIC_STATE_VIEWPORT, VK.DYNAMIC_STATE_SCISSOR]
---                   },
---             VK.layout = layout,
---             VK.renderPass = renderPass,
---             VK.subpass = 0
---           }
---   (_, pipelines) <- VK.withGraphicsPipelines device VK.NULL_HANDLE (V.fromList [VK.SomeStruct pipelineCreateInfo]) Nothing $ resourceN "graphics pipeline"
-
---   return (V.head pipelines, layout)
-
--- compileShaderDescription :: MonadIO io => VK.Device -> ShaderDescription -> AppMonad io d r ShaderDescriptionCompiled
--- compileShaderDescription device ShaderDescription{..} = do
---   vertexShader' <- createShaderModule device _vertexShaderSource
---   fragmentShader' <- createShaderModule device _fragmentShaderSource
---   return
---     ShaderDescriptionCompiled
---       { _vertexShaderModule = vertexShader',
---         _fragmentShaderModule = fragmentShader',
---         _vertexInputBindingDescription' = _vertexInputBindingDescription,
---         _vertexInputAttributeDescription' = _vertexInputAttributeDescription,
---         _pushConstants' = _pushConstants
---       }
+createRenderPass device VK.SwapchainCreateInfoKHR {..} (Just depthFormat) = do
+  let renderPassCreateInfo =
+        (zero :: VK.RenderPassCreateInfo '[])
+          { VK.attachments =
+              [ VK.AttachmentDescription
+                  { VK.flags = zero,
+                    VK.format = imageFormat,
+                    VK.samples = VK.SAMPLE_COUNT_1_BIT,
+                    VK.loadOp = VK.ATTACHMENT_LOAD_OP_CLEAR,
+                    VK.storeOp = VK.ATTACHMENT_STORE_OP_STORE,
+                    VK.stencilLoadOp = VK.ATTACHMENT_LOAD_OP_DONT_CARE,
+                    VK.stencilStoreOp = VK.ATTACHMENT_STORE_OP_DONT_CARE,
+                    VK.initialLayout = VK.IMAGE_LAYOUT_UNDEFINED,
+                    VK.finalLayout = VK.IMAGE_LAYOUT_PRESENT_SRC_KHR
+                  },
+                VK.AttachmentDescription
+                  { VK.flags = zero,
+                    VK.format = depthFormat,
+                    VK.samples = VK.SAMPLE_COUNT_1_BIT,
+                    VK.loadOp = VK.ATTACHMENT_LOAD_OP_CLEAR,
+                    VK.storeOp = VK.ATTACHMENT_STORE_OP_DONT_CARE,
+                    VK.stencilLoadOp = VK.ATTACHMENT_LOAD_OP_DONT_CARE,
+                    VK.stencilStoreOp = VK.ATTACHMENT_STORE_OP_DONT_CARE,
+                    VK.initialLayout = VK.IMAGE_LAYOUT_UNDEFINED,
+                    VK.finalLayout = VK.IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+                  }
+              ],
+            VK.subpasses =
+              [ VK.SubpassDescription
+                  { VK.flags = zero,
+                    VK.pipelineBindPoint = VK.PIPELINE_BIND_POINT_GRAPHICS,
+                    VK.inputAttachments = [],
+                    VK.colorAttachments = V.fromList [VK.AttachmentReference 0 VK.IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL],
+                    VK.resolveAttachments = [],
+                    VK.depthStencilAttachment = Just (VK.AttachmentReference 1 VK.IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL),
+                    VK.preserveAttachments = []
+                  }
+              ],
+            VK.dependencies =
+              [ VK.SubpassDependency
+                  { VK.srcSubpass = VK.SUBPASS_EXTERNAL,
+                    VK.dstSubpass = 0,
+                    VK.srcStageMask = VK.PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT .|. Vk.PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+                    VK.dstStageMask = VK.PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT .|. VK.PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+                    VK.srcAccessMask = zero,
+                    VK.dstAccessMask = VK.ACCESS_COLOR_ATTACHMENT_WRITE_BIT .|. VK.ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                    VK.dependencyFlags = zero
+                  }
+              ]
+          }
+  VK.withRenderPass device renderPassCreateInfo Nothing $ resourceN "render pass"
 
 createShaderModule :: (MonadIO io) => VK.Device -> ByteString -> AppMonad io d r VK.ShaderModule
 createShaderModule device code = do
@@ -276,7 +238,6 @@ createShaderModule device code = do
           { VK.code = code
           }
   VK.withShaderModule device createInfo Nothing $ resourceN "shader module"
-
 
 createSwapChain :: (MonadIO io) => VK.PhysicalDevice -> VK.Device -> Queues -> VK.SurfaceKHR -> AppMonad io d r (ResourceMutable VK.SwapchainKHR, VK.SwapchainCreateInfoKHR '[], ResourceMutable (Vector VK.ImageView))
 createSwapChain physicalDevice device queues surface = do
@@ -324,28 +285,28 @@ createSwapChain physicalDevice device queues surface = do
 
   (_, images) <- VK.getSwapchainImagesKHR device swapChain'
   let prepareWithImageView = fmap $ \image ->
-                let imageViewCreateInfo =
-                      (zero :: VK.ImageViewCreateInfo '[])
-                        { VK.image = image,
-                          VK.viewType = VK.IMAGE_VIEW_TYPE_2D,
-                          VK.format = format,
-                          VK.components =
-                            (zero :: VK.ComponentMapping)
-                              { VK.r = VK.COMPONENT_SWIZZLE_IDENTITY,
-                                VK.g = VK.COMPONENT_SWIZZLE_IDENTITY,
-                                VK.b = VK.COMPONENT_SWIZZLE_IDENTITY,
-                                VK.a = VK.COMPONENT_SWIZZLE_IDENTITY
-                              },
-                          VK.subresourceRange =
-                            (zero :: VK.ImageSubresourceRange)
-                              { VK.aspectMask = VK.IMAGE_ASPECT_COLOR_BIT,
-                                VK.baseMipLevel = 0,
-                                VK.levelCount = 1,
-                                VK.baseArrayLayer = 0,
-                                VK.layerCount = 1
-                              }
-                        }
-                in VK.withImageView device imageViewCreateInfo Nothing
+        let imageViewCreateInfo =
+              (zero :: VK.ImageViewCreateInfo '[])
+                { VK.image = image,
+                  VK.viewType = VK.IMAGE_VIEW_TYPE_2D,
+                  VK.format = format,
+                  VK.components =
+                    (zero :: VK.ComponentMapping)
+                      { VK.r = VK.COMPONENT_SWIZZLE_IDENTITY,
+                        VK.g = VK.COMPONENT_SWIZZLE_IDENTITY,
+                        VK.b = VK.COMPONENT_SWIZZLE_IDENTITY,
+                        VK.a = VK.COMPONENT_SWIZZLE_IDENTITY
+                      },
+                  VK.subresourceRange =
+                    (zero :: VK.ImageSubresourceRange)
+                      { VK.aspectMask = VK.IMAGE_ASPECT_COLOR_BIT,
+                        VK.baseMipLevel = 0,
+                        VK.levelCount = 1,
+                        VK.baseArrayLayer = 0,
+                        VK.layerCount = 1
+                      }
+                }
+         in VK.withImageView device imageViewCreateInfo Nothing
   imageViews <- resourceMN' "ImageView" $ prepareWithImageView images
   return (swapChain, createInfo, imageViews)
 
@@ -470,16 +431,6 @@ getAvailableInstanceExtensions = do
   (_, extensions) <- VK.enumerateInstanceExtensionProperties Nothing
   return $ map VK.extensionName $ V.toList extensions
 
--- present :: (MonadIO io) => VK.SwapchainKHR -> VK.Semaphore -> VK.Queue -> Word32 -> io ()
--- present swapChain waitSemaphore presentQueue index = do
---   let presentInfo =
---         (zero :: VK.PresentInfoKHR '[])
---           { VK.swapchains = V.fromList [swapChain],
---             VK.imageIndices = V.fromList [index],
---             VK.waitSemaphores = V.fromList [waitSemaphore]
---           }
---   void $ VK.queuePresentKHR presentQueue presentInfo
-
 foreign import ccall "wrapper" mkDebugMessage :: VK.FN_vkDebugUtilsMessengerCallbackEXT -> IO VK.PFN_vkDebugUtilsMessengerCallbackEXT
 
 debugMessage :: VK.FN_vkDebugUtilsMessengerCallbackEXT
@@ -512,57 +463,92 @@ getDebugCreateInfo = do
 
 createBuffer :: (MonadIO io) => VK.Device -> VK.BufferUsageFlags -> Int -> AppMonad io d r VK.Buffer
 createBuffer device usage size = do
-  VK.withBuffer device ?? Nothing ?? resourceN "buffer" $ (zero :: VK.BufferCreateInfo '[]) {
-    VK.size = fromIntegral size,
-    VK.usage = usage,
-    VK.sharingMode = VK.SHARING_MODE_EXCLUSIVE
-  }
+  VK.withBuffer device ?? Nothing ?? resourceN "buffer" $
+    (zero :: VK.BufferCreateInfo '[])
+      { VK.size = fromIntegral size,
+        VK.usage = usage,
+        VK.sharingMode = VK.SHARING_MODE_EXCLUSIVE
+      }
 
--- createBuffer :: (MonadIO io) => VK.Device -> VK.PhysicalDevice -> VK.MemoryPropertyFlags -> VK.BufferUsageFlags -> Int -> AppMonad io d r (VK.Buffer, VK.DeviceMemory)
--- createBuffer device pdevice memoryFlags usage size = do
---   let createInfo =
---         (zero :: VK.BufferCreateInfo '[])
---           { VK.size = fromIntegral size,
---             VK.usage = usage,
---             VK.sharingMode = VK.SHARING_MODE_EXCLUSIVE
---           }
---   buffer <- VK.withBuffer device createInfo Nothing $ resourceN "buffer"
---   memRequirements@VK.MemoryRequirements
---     { VK.memoryTypeBits = memReqBits,
---       VK.size = allocSize
---     } <-
---     VK.getBufferMemoryRequirements device buffer
---   memProperties <- VK.getPhysicalDeviceMemoryProperties pdevice
---   let validMemTypes = do
---         (i, memType@VK.MemoryType {VK.propertyFlags = flags}) <- zip [0 :: Int ..] $ V.toList $ VK.memoryTypes memProperties
---         guard $ memReqBits .&. (1 .<<. i) /= 0
---         guard $ flags .&. memoryFlags == memoryFlags
---         return (i, memType)
---   let memType = head validMemTypes
---   let allocInfo = (zero :: VK.MemoryAllocateInfo '[])
---         { VK.allocationSize = allocSize,
---           VK.memoryTypeIndex = fromIntegral $ fst memType
---         }
---   memory <- VK.withMemory device allocInfo Nothing $ resourceN "buffer memory"
---   VK.bindBufferMemory device buffer memory 0
+createImageBase :: (MonadIO io) => VK.Device -> VK.ImageUsageFlags -> VK.Format -> Int -> Maybe Int -> Maybe Int -> (io Vk.Image -> (Vk.Image -> io ()) -> r) -> r
+createImageBase device usage format width height depth = do
+  let height' = fromMaybe 1 height
+  let depth' = fromMaybe 1 depth
+  let imageType = case (height, depth) of
+        (Nothing, Nothing) -> VK.IMAGE_TYPE_1D
+        (Just _, Nothing) -> VK.IMAGE_TYPE_2D
+        (Just _, Just _) -> VK.IMAGE_TYPE_3D
+        (Nothing, Just _) -> error "Depth without height is not supported"
+  let imageCreateInfo =
+        (zero :: VK.ImageCreateInfo '[])
+          { VK.imageType = imageType,
+            VK.format = format,
+            VK.extent = VK.Extent3D (fromIntegral width) (fromIntegral height') (fromIntegral depth'),
+            VK.mipLevels = 1,
+            VK.arrayLayers = 1,
+            VK.samples = VK.SAMPLE_COUNT_1_BIT,
+            VK.tiling = VK.IMAGE_TILING_OPTIMAL,
+            VK.usage = usage,
+            VK.sharingMode = VK.SHARING_MODE_EXCLUSIVE
+          }
+  VK.withImage device imageCreateInfo Nothing
 
---   return (buffer, memory)
+createImage' :: (MonadIO io) => VK.Device -> VK.ImageUsageFlags -> VK.Format -> Int -> Maybe Int -> Maybe Int -> AppMonad io d r (ResourceMutable VK.Image)
+createImage' device usage format width height depth = createImageBase device usage format width height depth $ resourceMN "image"
 
--- writeHostBuffer' :: (MonadIO io) => VK.Device -> VK.DeviceMemory -> ByteString -> Int -> AppMonad io d r ()
--- writeHostBuffer' device memory bytes size = scope $ do
---   when (BS.length bytes > size) $ error "writeHostBuffer: size mismatch"
---   ptr <- VK.withMappedMemory device memory zero (fromIntegral size) zero resource
---   liftIO $ BS.useAsCStringLen bytes $ \(bytesPtr, len) -> do
---     copyBytes ptr (castPtr bytesPtr) len
+createImage :: (MonadIO io) => VK.Device -> VK.ImageUsageFlags -> VK.Format -> Int -> Maybe Int -> Maybe Int -> AppMonad io d r VK.Image
+createImage device usage format width height depth = 
+  createImageBase device usage format width height depth $ resourceN "image"
 
--- writeHostBuffer :: (MonadIO io) => VK.Device -> VK.DeviceMemory -> ByteString -> AppMonad io d r ()
--- writeHostBuffer device memory bytes = do
---   let size = BS.length bytes
---   writeHostBuffer' device memory bytes size
+createImageView :: (MonadIO io) => VK.Device -> VK.Image -> VK.Format -> VK.ImageAspectFlags -> AppMonad io d r VK.ImageView
+createImageView device image format aspectFlags = do
+  let imageViewCreateInfo =
+        (zero :: VK.ImageViewCreateInfo '[])
+          { VK.image = image,
+            VK.viewType = VK.IMAGE_VIEW_TYPE_2D,
+            VK.format = format,
+            VK.components =
+              (zero :: VK.ComponentMapping)
+                { VK.r = VK.COMPONENT_SWIZZLE_IDENTITY,
+                  VK.g = VK.COMPONENT_SWIZZLE_IDENTITY,
+                  VK.b = VK.COMPONENT_SWIZZLE_IDENTITY,
+                  VK.a = VK.COMPONENT_SWIZZLE_IDENTITY
+                },
+            VK.subresourceRange =
+              (zero :: VK.ImageSubresourceRange)
+                { VK.aspectMask = aspectFlags,
+                  VK.baseMipLevel = 0,
+                  VK.levelCount = 1,
+                  VK.baseArrayLayer = 0,
+                  VK.layerCount = 1
+                }
+          }
+  VK.withImageView device imageViewCreateInfo Nothing $ resourceN "image view"
 
--- writeHostBufferS :: (MonadIO io, Storable a) => VK.Device -> VK.DeviceMemory -> [a] -> AppMonad io d r ()
--- writeHostBufferS device memory bytes = scope $ do
---   let size = sum $ sizeOf <$> bytes
---   ptr <- VK.withMappedMemory device memory zero (fromIntegral size) zero resource
---   liftIO $ withArray bytes $ \bytesPtr -> do
---     copyBytes ptr (castPtr bytesPtr) size
+recordTransitionImageLayout :: (MonadIO io) => VK.CommandBuffer -> VK.Image -> VK.ImageAspectFlags -> VK.ImageLayout -> VK.ImageLayout -> AppMonad io d r ()
+recordTransitionImageLayout commandBuffer image aspect oldLayout newLayout = do
+  let (srcAcces, dstAccess, srcStage, dstStage) = case (oldLayout, newLayout) of
+        (VK.IMAGE_LAYOUT_UNDEFINED, VK.IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) -> (zero, VK.ACCESS_TRANSFER_WRITE_BIT, VK.PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK.PIPELINE_STAGE_TRANSFER_BIT)
+        (VK.IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK.IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) -> (VK.ACCESS_TRANSFER_WRITE_BIT, VK.ACCESS_SHADER_READ_BIT, VK.PIPELINE_STAGE_TRANSFER_BIT, VK.PIPELINE_STAGE_FRAGMENT_SHADER_BIT)
+        _ -> error "Unsupported image layout transition"
+
+  let barrierInfo =
+        VK.SomeStruct
+          (zero :: VK.ImageMemoryBarrier '[])
+            { VK.oldLayout = oldLayout,
+              VK.newLayout = newLayout,
+              VK.srcQueueFamilyIndex = VK.QUEUE_FAMILY_IGNORED,
+              VK.dstQueueFamilyIndex = VK.QUEUE_FAMILY_IGNORED,
+              VK.image = image,
+              VK.subresourceRange =
+                (zero :: VK.ImageSubresourceRange)
+                  { VK.aspectMask = aspect,
+                    VK.baseMipLevel = 0,
+                    VK.levelCount = 1,
+                    VK.baseArrayLayer = 0,
+                    VK.layerCount = 1
+                  },
+              VK.srcAccessMask = srcAcces,
+              VK.dstAccessMask = dstAccess
+            }
+  VK.cmdPipelineBarrier commandBuffer srcStage dstStage zero [] [] [barrierInfo]

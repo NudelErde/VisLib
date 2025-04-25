@@ -24,9 +24,12 @@ import Control.Lens
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Reader
+import Data.IORef
+import Data.List.Extra
 import Data.Vector (Vector)
 import qualified Data.Vector as V
 import Foreign hiding (void)
+import Linear.V2
 import qualified SDL
 import qualified SDL.Video.Vulkan as SDL
 import VisLib.App
@@ -35,9 +38,7 @@ import VisLib.Vulkan.Shader
 import VisLib.Vulkan.Vulkan hiding (ShaderDescription)
 import qualified Vulkan as VK
 import qualified Vulkan.CStruct.Extends as VK
-import Linear.V2
 import Vulkan.Zero
-import Data.List.Extra
 
 data Window = Window
   { _windowHandle :: SDL.Window
@@ -89,6 +90,12 @@ data Buffer = Buffer
     _bufferMemory :: MemoryBinding
   }
 
+data DepthBuffer = DepthBuffer
+  { _depthBufferHandle :: VK.Image,
+    _depthBufferMemory :: MemoryBinding,
+    _depthBufferView :: VK.ImageView
+  }
+
 data VulkanData = VulkanData
   { _vdWindow :: Window,
     _vdInstance :: Instance,
@@ -98,7 +105,8 @@ data VulkanData = VulkanData
     _vdSwapChain :: SwapChain,
     _vdFramebuffer :: Framebuffer,
     _vdRenderPass :: RenderPass,
-    _vdMemoryAllocator :: ResourceMutable MemoryState
+    _vdMemoryAllocator :: IORef MemoryState,
+    _vdDepthBuffer :: Maybe DepthBuffer
   }
 
 data IndexBuffer = IndexBuffer
@@ -128,6 +136,7 @@ $(makeLenses ''VulkanData)
 $(makeLenses ''Buffer)
 $(makeLenses ''Object)
 $(makeLenses ''IndexBuffer)
+$(makeLenses ''DepthBuffer)
 
 cmdBindPipeline :: (MonadIO io) => VK.CommandBuffer -> Pipeline -> io ()
 cmdBindPipeline commandBuffer pipeline = do
@@ -137,17 +146,36 @@ cmdBindIndexBuffer :: (MonadIO io) => VK.CommandBuffer -> IndexBuffer -> io ()
 cmdBindIndexBuffer commandBuffer indexBuffer = do
   VK.cmdBindIndexBuffer commandBuffer (indexBuffer ^. indexBufferBuffer . bufferHandle) 0 (indexBuffer ^. indexBufferType)
 
+cmdSetPushConstantPtr :: (MonadIO io) => VK.CommandBuffer -> Pipeline -> VK.ShaderStageFlags -> ShaderPushConstantDescription -> Ptr a -> io ()
+cmdSetPushConstantPtr commandBuffer pipeline flags pushConstant ptr =
+  liftIO $
+    VK.cmdPushConstants
+      commandBuffer
+      (pipeline ^. pipelineLayout)
+      flags
+      (fromIntegral $ pushConstant ^. shaderPushConstantOffset)
+      (fromIntegral $ pushConstant ^. shaderPushConstantSize)
+      (castPtr ptr)
+
 cmdSetPushConstant :: (MonadIO io, Storable a) => VK.CommandBuffer -> Pipeline -> VK.ShaderStageFlags -> ShaderPushConstantDescription -> a -> io ()
 cmdSetPushConstant commandBuffer pipeline flags pushConstant value = do
   let size = fromIntegral $ pushConstant ^. shaderPushConstantSize
   when (size /= sizeOf value) $
-    liftIO $ throwIO $ userError $ "Push constant size mismatch: expected " ++ show size ++ ", got " ++ show (sizeOf value)
-  liftIO $ with value (VK.cmdPushConstants
-        commandBuffer
-        (pipeline ^. pipelineLayout)
-        flags
-        (fromIntegral $ pushConstant ^. shaderPushConstantOffset)
-        (fromIntegral $ pushConstant ^. shaderPushConstantSize) . castPtr)
+    liftIO $
+      throwIO $
+        userError $
+          "Push constant size mismatch: expected " ++ show size ++ ", got " ++ show (sizeOf value)
+  liftIO $
+    with
+      value
+      ( VK.cmdPushConstants
+          commandBuffer
+          (pipeline ^. pipelineLayout)
+          flags
+          (fromIntegral $ pushConstant ^. shaderPushConstantOffset)
+          (fromIntegral $ pushConstant ^. shaderPushConstantSize)
+          . castPtr
+      )
 
 acquireNextImage :: (MonadIO io) => Device -> SwapChain -> VK.Semaphore -> io Word32
 acquireNextImage device swapChain semaphore = do
@@ -267,7 +295,7 @@ recreateSwapChain = do
         let framebufferCreateInfo =
               (zero :: VK.FramebufferCreateInfo '[])
                 { VK.renderPass = vd ^. vdRenderPass . renderPassHandle,
-                  VK.attachments = [imageView],
+                  VK.attachments = V.fromList (imageView : vd ^.. vdDepthBuffer . _Just . depthBufferView),
                   VK.width = width,
                   VK.height = height,
                   VK.layers = 1

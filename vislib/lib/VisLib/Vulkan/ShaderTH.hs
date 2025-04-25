@@ -15,7 +15,7 @@ import Language.Haskell.TH
 import Language.Haskell.TH.Quote
 import Language.Haskell.TH.Syntax
 import Text.Megaparsec
-import Text.Megaparsec.Char
+import Text.Megaparsec.Char hiding (space)
 import qualified Text.Megaparsec.Char.Lexer as L
 import VisLib.Parse
 import VisLib.Vulkan.Shader
@@ -23,8 +23,11 @@ import qualified Vulkan as VK
 import Vulkan.Utils.ShaderQQ.GLSL.Shaderc
 import Vulkan.Zero (zero)
 
+space :: Parser String ()
+space = L.space space1 (L.skipLineComment "//") (L.skipBlockCommentNested "/*" "*/")
+
 lexeme :: Parser String a -> Parser String a
-lexeme = L.lexeme (L.space space1 (L.skipLineComment "//") (L.skipBlockCommentNested "/*" "*/"))
+lexeme = L.lexeme space
 
 identifier :: Parser String String
 identifier = lexeme $ some $ satisfy isAlphaNum
@@ -104,7 +107,7 @@ parseStartOfLine p = do
   lines' <- manyTill ?? eof $ do
     void $ many space1
     m <- optional (try p)
-    skipManyTill anySingle (void eol <|> eof)
+    when (isNothing m) $ skipManyTill anySingle (void eol <|> eof)
     return m
   return $ catMaybes lines'
 

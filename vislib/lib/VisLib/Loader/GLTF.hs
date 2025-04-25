@@ -133,7 +133,7 @@ data GLTFAccessor = GLTFAccessor {
   normalized :: Maybe Bool,
   max :: Maybe [Float],
   min :: Maybe [Float]
-} deriving (Eq)
+} deriving (Eq, Show)
 
 instance FromJSON GLTFAccessor where
   parseJSON (Object v) = GLTFAccessor
